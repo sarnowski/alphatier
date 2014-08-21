@@ -6,7 +6,7 @@
 
 (deftest commit-test
   (let [pool (tools/create-test-pool)
-        executor (first (vals @(:executors pool)))]
+        executor (-> pool pools/get-snapshot :executors vals first)]
 
     (testing "creation"
 

@@ -62,17 +62,17 @@
 (defn- resource-exceeded?
   "The sum of the reserved resources of one type should not be higher than the given resource of the executor."
   [pool executor key]
-  (let [tasks (map #(get (:tasks pool) %) (:task-ids executor))]
+  (let [tasks (map #(get-in @pool [:tasks %]) (:task-ids executor))]
     (> (reduce + (map #(get-in % [:resources key]) tasks))
        (get (:resources executor) key))))
 
 (defn- resources-exceeded?
   "Not a single resource of an executor must be exceeded."
   [pool executor]
-  (not-any? #(resource-exceeded? pool executor %) (keys (:resources executor))))
+  (some #(resource-exceeded? pool executor %) (keys (:resources executor))))
 
 (defn- executors-exceeding-resource-limits [pool]
-  (filter #(resources-exceeded? pool %) @(:executors pool)))
+  (filter #(resources-exceeded? pool %) (:executors @pool)))
 
 
 ;; ### How to implement a scheduler?
@@ -122,7 +122,7 @@ If set, the versions will be checked with the current pool state and rejected if
     ; TODO postcheck all constrains (resource limits, scheduler limits, ...)
     (let [broken-executors (executors-exceeding-resource-limits pool)]
       (when (not (empty? broken-executors))
-        (throw (io.alphatier.schedulers.RejectedException.)))))
+        (throw (io.alphatier.schedulers.RejectedException. (pr-str "broken executors" broken-executors))))))
   pool)
 
 ;; ### Java usage

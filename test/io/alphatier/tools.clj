@@ -19,5 +19,5 @@
         executor-count 3]
     (dosync
       (doseq [executor (repeatedly executor-count create-test-executor)]
-        (alter (:executors pool) assoc (:id executor) executor)))
+        (alter pool assoc-in [:executors (:id executor)] executor)))
     pool))

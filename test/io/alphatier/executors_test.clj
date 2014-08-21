@@ -26,7 +26,7 @@
 
 (deftest update-executor-test
   (let [pool (tools/create-test-pool)
-        executor (first (vals @(:executors pool)))]
+        executor (-> pool pools/get-snapshot :executors vals first)]
 
     (testing "update executor metadata merging"
       (update pool (:id executor) {:foo :bar})
@@ -47,7 +47,7 @@
 
 (deftest unregister-executor-test
   (let [pool (tools/create-test-pool)
-        executor (first (vals @(:executors pool)))]
+        executor (-> pool pools/get-snapshot :executors vals first)]
 
     (testing "unregister executor"
       (unregister pool (:id executor))

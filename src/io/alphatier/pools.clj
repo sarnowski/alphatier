@@ -66,12 +66,19 @@
   (ref (map->Pool {:executors {}
                    :tasks {}})))
 
+
 (defn get-snapshot
   "When getting a snapshot of a pool, you get an immutable view of the current executors and tasks. This view is
    guarenteed to be consistent."
   [pool]
   (deref pool))
 
+
+(defn create-with-state
+  "It is also possible to create a new pool based on an old state. This can be used to simulate commits based on a real
+   pool that should not affect the live system or to make a pool durable and restore it later."
+  [snapshot]
+  (ref (map->Pool snapshot)))
 
 
 ;; ### Java usage
@@ -86,7 +93,9 @@
   :main false
   :prefix "java-"
   :methods [#^{:static true} [create [] Object]
+            #^{:static true} [createWithState [io.alphatier.pools.Pool] Object]
             #^{:static true} [getSnapshot [Object] io.alphatier.pools.Pool]])
 
 (defn- java-create [] (create))
+(defn- java-createWithState [snapshot] (create-with-state snapshot))
 (defn- java-getSnapshot [pool] (get-snapshot pool))
