@@ -24,6 +24,7 @@
 ;; Isolation is provided through [Clojure's STM](http://clojure.org/refs). If writes happen to the state while a
 ;; transaction runs, the transaction will be repeated with the new state.
 (ns io.alphatier.schedulers
+  (:import [com.sun.xml.internal.bind.v2 TODO])
   (:require [io.alphatier.pools :as pools]))
 
 ;; ## Commits
@@ -33,9 +34,9 @@
 ;; * **create** new tasks, assigned to an executor
 ;; * **update** a task's metadata in order to influence the task during runtime
 ;; * **kill** a task
-(defrecord Commit [scheduler-id
-                   tasks
-                   allow-partial-commit])
+(defrecord Commit [scheduler-id tasks allow-partial-commit])
+
+(defrecord Result [rejected-tasks pre-snapshot post-snapshot])
 
 
 (defn- create-task
@@ -83,25 +84,41 @@ Depending on the `:allow-partial-commit`, the whole commit may get rejected if o
 constraint.
 
 Using the `:force` flag disables all constraint checks and effectivly allows the commit to go through. This is mainly
-intended to relpay already committed commits (e.g. in an replication mode)."
+intended to relpay already committed commits (e.g. in an replication mode).
+
+You can not issue two actions for the same task at once."
   [pool commit & {:keys [force]
                   :or {force false}}]
+
+  ; TODO check for duplicate task IDs
+
   (dosync
-    (let [pre-snapshot (pools/get-snapshot pool)]
+    (let [pre-snapshot (pools/get-snapshot pool)
+          rejections (atom [])]
+
+      ; Phase 1: check pre constraints
       (when-not force
-        (comment "TODO run pre-constraints"))
-      ; TODO fail fast if rejections and no partial commit
+        (swap! rejections into
+               (map #(% commit pre-snapshot) (-> commit :constraints :pre))))
 
       ; Phase 2: apply the actions
       (doseq [task (:tasks commit)]
         (((:action task) commit-actions) pool task))
 
-      ; TODO postcheck all constrains (resource limits, scheduler limits, ...)
-      (when-not force
-        (comment "TODO run post-constraints"
-                 (throw (ex-info "commit rejected" {:rejected-tasks []
-                                                    :pre-snapshot pre-snapshot}))))
+      (let [post-snapshot (pools/get-snapshot pool)]
 
-      {:rejected-tasks []
-       :pre-snapshot pre-snapshot
-       :post-snapshot (pools/get-snapshot pool)})))
+        ; Phase 3: check post constraints
+        (when-not force
+          (swap! rejections into
+                 (map #(% commit pre-snapshot post-snapshot) (-> commit :constraints :post))))
+
+        ; reject?
+        (if (not (empty? @rejections))  ; TODO allow partial commits
+          (throw (ex-info "commit rejected" (map->Result {:rejected-tasks @rejections
+                                                          :pre-snapshot pre-snapshot
+                                                          :post-snapshot post-snapshot}))))
+
+        ; accept!
+        (map->Result {:rejected-tasks @rejections
+                      :pre-snapshot pre-snapshot
+                      :post-snapshot post-snapshot})))))

@@ -3184,7 +3184,8 @@ that must be reserved and guaranteed for this task.</li>
   [snapshot]
   (let [pool (create)]
     (dosync
-      (alter pool merge snapshot))))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.schedulers" name="io.alphatier.schedulers"><h1 class="project-name">io.alphatier.schedulers</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Schedulers</h2>
+      (alter pool merge snapshot))
+    pool))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.schedulers" name="io.alphatier.schedulers"><h1 class="project-name">io.alphatier.schedulers</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Schedulers</h2>
 
 <p>Schedulers are the decision maker in the Alphatier world. They are able to create and kill tasks every time they like
 to. Possible scenarios are server cluster management where every executor represents one host in your data centers
@@ -3192,10 +3193,11 @@ and a "service scheduler" which can let the hosts (executors) start or stop appl
 scenario is your office kitchen where each coffee machine can brew 4 coffees at a time. Every coffee machine
 can be represented with an executor and you write a scheduler that is able to manage which coffee machine brews which
 colleague's coffee.</p>
-</td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.schedulers)</pre></td></tr><tr><td class="docs"><h3>ACID without D</h3>
+
+<h3>ACID without D</h3>
 
 <p>Alphatier changes are <a href="http://en.wikipedia.org/wiki/ACID">ACID</a> without the D (durable). <strong>A</strong>tomicity is optional
-for the scheduler, <strong>C</strong>onsistency and <strong>I</strong>solation are guarenteed. The pools are an in-memory datastructure and
+for the scheduler, <strong>C</strong>onsistency and <strong>I</strong>solation are guarenteed. The pools are an in-memory datastructures and
 therefor aren't durable across JVM restarts.</p>
 
 <p>Task changes on the pool happen via a commit. A commit may contain multiple creation or kill requests for tasks.
@@ -3207,8 +3209,9 @@ constraints. Built-in is optimistic locking of executor or task data and protect
 
 <p>Isolation is provided through <a href="http://clojure.org/refs">Clojure's STM</a>. If writes happen to the state while a
 transaction runs, the transaction will be repeated with the new state.</p>
-</td><td class="codes"><pre class="brush: clojure">(gen-class :name &quot;io.alphatier.schedulers.RejectedException&quot;
-           :extends IllegalStateException)</pre></td></tr><tr><td class="docs"><h2>Commits</h2>
+</td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.schedulers
+  (:import [com.sun.xml.internal.bind.v2 TODO])
+  (:require [io.alphatier.pools :as pools]))</pre></td></tr><tr><td class="docs"><h2>Commits</h2>
 
 <p>All changes to the pool by a scheduler have to go through a commit. A scheduler can do three actions:</p>
 
@@ -3217,7 +3220,8 @@ transaction runs, the transaction will be repeated with the new state.</p>
 <li><strong>update</strong> a task's metadata in order to influence the task during runtime</li>
 <li><strong>kill</strong> a task</li>
 </ul>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Creating a tasks registers it in the pool and assigns it to the given executor.</p>
+</td><td class="codes"><pre class="brush: clojure">(defrecord Commit [scheduler-id tasks allow-partial-commit])</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defrecord Result [rejected-tasks pre-snapshot post-snapshot])</pre></td></tr><tr><td class="docs"><p>Creating a tasks registers it in the pool and assigns it to the given executor.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- create-task
   [pool task]
   (alter pool assoc-in [:tasks (:id task)] task)
@@ -3229,7 +3233,10 @@ transaction runs, the transaction will be repeated with the new state.</p>
   (alter pool update-in [:tasks (:id task) :metadata-version] inc))</pre></td></tr><tr><td class="docs"><p>Killing a tasks sets its lifecycle-phase to <code>:kill</code>, so that the executor can actually kill it.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- kill-task
   [pool task]
-  (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))</pre></td></tr><tr><td class="docs"><h3>How to implement a scheduler?</h3>
+  (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))</pre></td></tr><tr><td class="docs"><p>All given tasks must provide the action you want to perform in the <code>:action</code> key.</p>
+</td><td class="codes"><pre class="brush: clojure">(def ^:private commit-actions {:create create-task
+                               :update update-task
+                               :kill kill-task})</pre></td></tr><tr><td class="docs"><h3>How to implement a scheduler?</h3>
 
 <p>The basic workflow for a scheduler looks like the following:</p>
 
@@ -3241,49 +3248,49 @@ tasks or some tasks that you want to shut down)</li>
 </ol>
 </td><td class="codes"></td></tr><tr><td class="docs"><h3>Committing</h3>
 
-<p>To execute a commit, you need to provide at least a commit identifier and an identifier for your scheduler. The
-commit ID is used for debugging purposes (e.g. logs). The scheduler ID will be used to apply user defined constraints
-to it. The following options are available:</p>
+<p>A commit has 3 phases:</p>
 
 <ul>
-<li><code>:create</code> contains a list of all tasks to create</li>
-<li><code>:update</code> contains a list of all tasks to update</li>
-<li><code>:kill</code> contains a list of all tasks to kill</li>
-<li><code>:allow-partial</code> is a boolean describing if single tasks should succeed even if other tasks fail</li>
-<li><code>:force</code> disables all constraint checks</li>
+<li>run all pre constraint checks</li>
+<li>apply the requested the actions</li>
+<li>run all post constraint checks</li>
 </ul>
 
-<p>All task list entries contain at least the task ID the request is for. Every entry may include the following counters
-for optimistic locking:</p>
+<p>Depending on the <code>:allow-partial-commit</code>, the whole commit may get rejected if one task does not get approved by a
+constraint.</p>
 
-<ul>
-<li><code>:executor-metadata-version</code></li>
-<li><code>:executor-tasks-version</code></li>
-<li><code>:task-metadata-version</code></li>
-</ul>
+<p>Using the <code>:force</code> flag disables all constraint checks and effectivly allows the commit to go through. This is mainly
+intended to relpay already committed commits (e.g. in an replication mode).</p>
 
-<p>If set, the versions will be checked with the current pool state and rejected if not equal.</p>
+<p>You can not issue two actions for the same task at once.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn commit
-  [pool commit-id scheduler-id &amp; {:keys [create update kill allow-partial-commit force]
-                                  :or {create []
-                                       update []
-                                       kill []
-                                       allow-partial-commit false
-                                       force false}}]
+  [pool commit &amp; {:keys [force]
+                  :or {force false}}]
+  ; TODO check for duplicate task IDs
   (dosync
-    (when-not force
-      (comment &quot;TODO run pre-constraints&quot;))
-    ; TODO fail fast if rejections and no partial commit
-    (doseq [task create] (create-task pool task))
-    (doseq [task update] (update-task pool task))
-    (doseq [task kill] (kill-task pool task))
-    ; TODO postcheck all constrains (resource limits, scheduler limits, ...)
-    (when-not force
-      (comment &quot;TODO run post-constraints&quot;))
-    ;    (let [broken-executors (executors-exceeding-resource-limits pool)]
-    ;      (when (not (empty? broken-executors))
-    ;        (throw (io.alphatier.schedulers.RejectedException. (pr-str &quot;broken executors&quot; broken-executors)))))))
-  pool)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.constraints" name="io.alphatier.constraints"><h1 class="project-name">io.alphatier.constraints</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Constraints</h2>
+    (let [pre-snapshot (pools/get-snapshot pool)
+          rejections (atom [])]
+      ; Phase 1: check pre constraints
+      (when-not force
+        (swap! rejections into
+               (map #(% commit pre-snapshot) (-&gt; commit :constraints :pre))))
+      ; Phase 2: apply the actions
+      (doseq [task (:tasks commit)]
+        (((:action task) commit-actions) pool task))
+      (let [post-snapshot (pools/get-snapshot pool)]
+        ; Phase 3: check post constraints
+        (when-not force
+          (swap! rejections into
+                 (map #(% commit pre-snapshot post-snapshot) (-&gt; commit :constraints :post))))
+        ; reject?
+        (if (not (empty? @rejections))  ; TODO allow partial commits
+          (throw (ex-info &quot;commit rejected&quot; (map-&gt;Result {:rejected-tasks @rejections
+                                                          :pre-snapshot pre-snapshot
+                                                          :post-snapshot post-snapshot}))))
+        ; accept!
+        (map-&gt;Result {:rejected-tasks @rejections
+                      :pre-snapshot pre-snapshot
+                      :post-snapshot post-snapshot})))))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.constraints" name="io.alphatier.constraints"><h1 class="project-name">io.alphatier.constraints</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Constraints</h2>
 
 <p>In order to prevent total chaos with multiple schedulers, one can define constraints to limit the possibilities of
 schedulers running amok. Some constraints are already built in like forbidding resource overbooking. Others can be
@@ -3297,7 +3304,8 @@ rejected. All constraints run within the commit transaction and can lead to atom
 the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.constraints
   (:import [clojure.lang IFn])
-  (:require [clojure.core.incubator :as clojure-incubator]))</pre></td></tr><tr><td class="docs"><p>To add a constraint to a pool, you have to provide its type which is <code>:pre</code> or <code>:post</code>.</p>
+  (:require [clojure.core.incubator :as clojure-incubator]))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defrecord Violation [task-id executor-id constraint-type constraint-name])</pre></td></tr><tr><td class="docs"><p>To add a constraint to a pool, you have to provide its type which is <code>:pre</code> or <code>:post</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn add
   [pool type name fn]
   (dosync
@@ -3308,20 +3316,31 @@ the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.<
     (alter pool clojure-incubator/dissoc-in [:constraints type name])))</pre></td></tr><tr><td class="docs"><h3>Built-in constraints</h3>
 
 <p>This list of built-in constraints is automatically added to all new pools.</p>
-</td><td class="codes"></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn optimistic-locking [commit pre-snapshot]
-  [])</pre></td></tr><tr><td class="docs"><p>The sum of the reserved resources of one type should not be higher than the given resource of the executor.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- resource-exceeded?
-  [pool executor key]
-  (let [tasks (map #(get-in @pool [:tasks %]) (:task-ids executor))]
-    (&gt; (reduce + (map #(get-in % [:resources key]) tasks))
-       (get (:resources executor) key))))</pre></td></tr><tr><td class="docs"><p>Not a single resource of an executor must be exceeded.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- resources-exceeded?
-  [pool executor]
-  (some #(resource-exceeded? pool executor %) (keys (:resources executor))))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn- executors-exceeding-resource-limits [pool]
-  (filter #(resources-exceeded? pool %) (:executors @pool)))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Every task can use optimistic locking semantic to be only applied if the state, used by the scheduler, is still the
+   current one. In order to achieve the optimistic locking, you can add the following parameters to the supplied tasks:</p>
+
+<ul>
+<li><code>:executor-metadata-version</code> referencing the executor's metadata version</li>
+<li><code>:executor-tasks-version</code> referencing the executor's tasks version</li>
+<li><code>:task-metadata-version</code> referencing the task's metadata version</li>
+</ul>
+</td><td class="codes"><pre class="brush: clojure">(defn optimistic-locking
+  [commit pre-snapshot]
+  ; TODO
+  [])</pre></td></tr><tr><td class="docs"><p>The sum of the reserved resources of one type should not be higher than the given resource of the executor.Not a single resource of an executor must be exceeded.</p>
+</td><td class="codes"><pre class="brush: clojure">(comment &quot;old stuff&quot;
+  (defn- resource-exceeded?
+    [pool executor key]
+    (let [tasks (map #(get-in @pool [:tasks %]) (:task-ids executor))]
+      (&gt; (reduce + (map #(get-in % [:resources key]) tasks))
+         (get (:resources executor) key))))
+  (defn- resources-exceeded?
+    [pool executor]
+    (some #(resource-exceeded? pool executor %) (keys (:resources executor))))
+  (defn- executors-exceeding-resource-limits [pool]
+    (filter #(resources-exceeded? pool %) (:executors @pool))))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(defn no-resource-overbooking [commit pre-snapshot post-snapshot]
+  ; TODO
   [])</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.executors" name="io.alphatier.executors"><h1 class="project-name">io.alphatier.executors</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Executors</h2>
 
 <p>Executors are on the other side of schedulers. They are the workforce of Alphatier and execute whatever the

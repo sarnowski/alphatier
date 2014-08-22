@@ -14,6 +14,8 @@
   (:import [clojure.lang IFn])
   (:require [clojure.core.incubator :as clojure-incubator]))
 
+(defrecord Violation [task-id executor-id constraint-type constraint-name])
+
 (defn add
   "To add a constraint to a pool, you have to provide its type which is `:pre` or `:post`."
   [pool type name fn]
@@ -30,27 +32,33 @@
 ;;
 ;; This list of built-in constraints is automatically added to all new pools.
 
-; TODO pre: tasks & metadata versions
+(defn optimistic-locking
+  "Every task can use optimistic locking semantic to be only applied if the state, used by the scheduler, is still the
+   current one. In order to achieve the optimistic locking, you can add the following parameters to the supplied tasks:
 
-(defn optimistic-locking [commit pre-snapshot]
+   * `:executor-metadata-version` referencing the executor's metadata version
+   * `:executor-tasks-version` referencing the executor's tasks version
+   * `:task-metadata-version` referencing the task's metadata version"
+  [commit pre-snapshot]
+  ; TODO
   [])
 
-; TODO post: resources exceeded
+(comment "old stuff"
+  (defn- resource-exceeded?
+    "The sum of the reserved resources of one type should not be higher than the given resource of the executor."
+    [pool executor key]
+    (let [tasks (map #(get-in @pool [:tasks %]) (:task-ids executor))]
+      (> (reduce + (map #(get-in % [:resources key]) tasks))
+         (get (:resources executor) key))))
 
-(defn- resource-exceeded?
-  "The sum of the reserved resources of one type should not be higher than the given resource of the executor."
-  [pool executor key]
-  (let [tasks (map #(get-in @pool [:tasks %]) (:task-ids executor))]
-    (> (reduce + (map #(get-in % [:resources key]) tasks))
-       (get (:resources executor) key))))
+  (defn- resources-exceeded?
+    "Not a single resource of an executor must be exceeded."
+    [pool executor]
+    (some #(resource-exceeded? pool executor %) (keys (:resources executor))))
 
-(defn- resources-exceeded?
-  "Not a single resource of an executor must be exceeded."
-  [pool executor]
-  (some #(resource-exceeded? pool executor %) (keys (:resources executor))))
-
-(defn- executors-exceeding-resource-limits [pool]
-  (filter #(resources-exceeded? pool %) (:executors @pool)))
+  (defn- executors-exceeding-resource-limits [pool]
+    (filter #(resources-exceeded? pool %) (:executors @pool))))
 
 (defn no-resource-overbooking [commit pre-snapshot post-snapshot]
+  ; TODO
   [])
