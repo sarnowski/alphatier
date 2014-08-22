@@ -54,4 +54,3 @@
 
 (defn no-resource-overbooking [commit pre-snapshot post-snapshot]
   [])
-

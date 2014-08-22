@@ -18,7 +18,7 @@ information.
 
 The source is tested on every update by [Travis-CI](https://travis-ci.org/sarnowski/alphatier).
 
-* [![Build Status](https://travis-ci.org/sarnowski/alphatier.svg?branch=master)](https://travis-ci.org/sarnowski/alphatier)
+[![Build Status](https://travis-ci.org/sarnowski/alphatier.svg?branch=master)](https://travis-ci.org/sarnowski/alphatier)
 
 The build process of this library is managed by [Leiningen](http://leiningen.org/). The
 following commands have to be executed at the root of your project checkout:

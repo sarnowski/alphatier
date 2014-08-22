@@ -11,10 +11,12 @@
     (testing "creation"
 
       (testing "simple task creation"
-        (commit pool "test-scheduler"
-                :create [{:id "test-task"
-                          :executor-id (:id executor)
-                          :resources {:memory 50}}])
+        (commit pool (map->Commit {:scheduler-id "test-scheduler"
+                                   :tasks [{:id "test-task"
+                                            :action :create
+                                            :executor-id (:id executor)
+                                            :resources {:memory 50}}]
+                                   :allow-partial-commit false}))
 
         (let [{:keys [executors tasks]} (pools/get-snapshot pool)
               used-executor (get executors (:id executor))
@@ -24,13 +26,16 @@
           (is (contains? (into #{} (:task-ids used-executor)) "test-task"))))
 
       (testing "multiple task creation"
-        (commit pool "test-scheduler"
-               :create [{:id "test-task-1"
-                         :executor-id (:id executor)
-                         :resources {:memory 50}}
-                        {:id "test-task-2"
-                         :executor-id (:id executor)
-                         :resources {:memory 50}}])
+        (commit pool (map->Commit {:scheduler-id "test-scheduler"
+                                   :tasks [{:id "test-task-1"
+                                            :action :create
+                                            :executor-id (:id executor)
+                                            :resources {:memory 50}}
+                                           {:id "test-task-2"
+                                            :action :create
+                                            :executor-id (:id executor)
+                                            :resources {:memory 50}}]
+                                   :allow-partial-commit false}))
 
         (let [{:keys [executors tasks]} (pools/get-snapshot pool)
               task1 (get tasks "test-task-1")

@@ -33,8 +33,11 @@
 ;; * **create** new tasks, assigned to an executor
 ;; * **update** a task's metadata in order to influence the task during runtime
 ;; * **kill** a task
+(defrecord Commit [scheduler-id
+                   tasks
+                   allow-partial-commit])
 
-; TODO metadata/tasks-version resets
+
 (defn- create-task
   "Creating a tasks registers it in the pool and assigns it to the given executor."
   [pool task]
@@ -53,6 +56,10 @@
   [pool task]
   (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))
 
+;; All given tasks must provide the action you want to perform in the `:action` key.
+(def ^:private commit-actions {:create create-task
+                               :update update-task
+                               :kill kill-task})
 
 ;; ### How to implement a scheduler?
 ;;
@@ -66,38 +73,28 @@
 (defn commit
 "### Committing
 
-To execute a commit, you need to provide at least the identifier for your scheduler. The scheduler ID will be used to
-apply user defined constraints to it. The following options are available:
+A commit has 3 phases:
 
-* `:create` contains a list of all tasks to create
-* `:update` contains a list of all tasks to update
-* `:kill` contains a list of all tasks to kill
-* `:allow-partial` is a boolean describing if single tasks should succeed even if other tasks fail
-* `:force` disables all constraint checks
+* run all pre constraint checks
+* apply the requested the actions
+* run all post constraint checks
 
-All task list entries contain at least the task ID the request is for. Every entry may include the following counters
-for optimistic locking:
+Depending on the `:allow-partial-commit`, the whole commit may get rejected if one task does not get approved by a
+constraint.
 
-* `:executor-metadata-version`
-* `:executor-tasks-version`
-* `:task-metadata-version`
-
-If set, the versions will be checked with the current pool state and rejected if not equal."
-  [pool scheduler-id & {:keys [create update kill allow-partial-commit force]
-                        :or {create []
-                             update []
-                             kill []
-                             allow-partial-commit false
-                             force false}}]
+Using the `:force` flag disables all constraint checks and effectivly allows the commit to go through. This is mainly
+intended to relpay already committed commits (e.g. in an replication mode)."
+  [pool commit & {:keys [force]
+                  :or {force false}}]
   (dosync
     (let [pre-snapshot (pools/get-snapshot pool)]
       (when-not force
         (comment "TODO run pre-constraints"))
       ; TODO fail fast if rejections and no partial commit
 
-      (doseq [task create] (create-task pool task))
-      (doseq [task update] (update-task pool task))
-      (doseq [task kill] (kill-task pool task))
+      ; Phase 2: apply the actions
+      (doseq [task (:tasks commit)]
+        (((:action task) commit-actions) pool task))
 
       ; TODO postcheck all constrains (resource limits, scheduler limits, ...)
       (when-not force
