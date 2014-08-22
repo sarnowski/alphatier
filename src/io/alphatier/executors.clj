@@ -3,6 +3,7 @@
 ;; Executors are on the other side of schedulers. They are the workforce of Alphatier and execute whatever the
 ;; schedulers wants them to do.
 (ns io.alphatier.executors
+  (:import [clojure.lang IFn])
   (:require [clojure.core.incubator :as clojure-incubator]
             [io.alphatier.pools :as core]))
 
@@ -75,17 +76,3 @@
       (alter pool update-in [:executors executor-id :task-ids] #(remove #{task-id} %))
       (alter pool update-in [:executors executor-id :tasks-version] inc)))
   pool)
-
-;; ### Java usage
-;;
-;; The here defined functions can be accessed via the `Executors` utility class.
-;;
-;;     Executors.register(...);
-(gen-class
-  :name "io.alphatier.Executors"
-  :main false
-  :prefix "java-")
-
-(defn- java-register [pool executorId resources options] (register pool executorId resources options))
-(defn- java-update [pool executorId metadata] (register pool executorId metadata))
-(defn- java-update [pool executorId metadata] (register pool executorId metadata))

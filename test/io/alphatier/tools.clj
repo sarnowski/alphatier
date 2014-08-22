@@ -1,5 +1,9 @@
 (ns io.alphatier.tools
-  (:require [io.alphatier.pools :as pools]))
+  (:require [clojure.test :refer :all]
+            [io.alphatier.pools :as pools]))
+
+(defn fail!! [failure-reason]
+  (is (not failure-reason)))
 
 (def ^:private test-executors (atom 0))
 

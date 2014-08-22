@@ -26,11 +26,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ## Usage
 
-The library is written in [Clojure](http://clojure.org/) and is usable by
-every [JVM language](https://www.java.com/) (including Java, Scala, Groovy,
-etc).
-
-The libary is available in the [central Maven repository](https://repo1.maven.org/maven2/io/alphatier/Alphatier):
+The library is written in [Clojure](http://clojure.org/) and  is available in the
+[central Maven repository](https://repo1.maven.org/maven2/io/alphatier/alphatier):
 
     <dependency>
         <groupId>io.alphatier</groupId>
@@ -53,7 +50,7 @@ If you like to change this library, please have a look at the [README](README.md
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/core.incubator "0.1.3"]]
 
-  :aot :all
+  ;:aot :all
 
   :plugins [[lein-marginalia "0.7.1"]]
   :aliases {"doc" ["marg"

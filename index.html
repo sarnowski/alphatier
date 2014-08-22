@@ -25,11 +25,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ## Usage
 
-The library is written in [Clojure](http://clojure.org/) and is usable by
-every [JVM language](https://www.java.com/) (including Java, Scala, Groovy,
-etc).
-
-The libary is available in the [central Maven repository](https://repo1.maven.org/maven2/io/alphatier/Alphatier):
+The library is written in [Clojure](http://clojure.org/) and  is available in the
+[central Maven repository](https://repo1.maven.org/maven2/io/alphatier/alphatier):
 
     &lt;dependency&gt;
         &lt;groupId&gt;io.alphatier&lt;/groupId&gt;
@@ -3095,11 +3092,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.</p>
 
 <h2>Usage</h2>
 
-<p>The library is written in <a href="http://clojure.org/">Clojure</a> and is usable by
-every <a href="https://www.java.com/">JVM language</a> (including Java, Scala, Groovy,
-etc).</p>
-
-<p>The libary is available in the <a href="https://repo1.maven.org/maven2/io/alphatier/Alphatier">central Maven repository</a>:</p>
+<p>The library is written in <a href="http://clojure.org/">Clojure</a> and  is available in the
+<a href="https://repo1.maven.org/maven2/io/alphatier/alphatier">central Maven repository</a>:</p>
 
 <pre><code>&lt;dependency&gt;
     &lt;groupId&gt;io.alphatier&lt;/groupId&gt;
@@ -3133,12 +3127,13 @@ decision to Alphatier.</li>
 <p>Alphatier makes sure, that certain constraints are met when schedulers want to commit new tasks to the pool. At a
 basic minimum, Alphatier checks that resources are not exceeded. It can also check for other criteria based on
 predefined constraints.</p>
-</td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.pools)</pre></td></tr><tr><td class="docs"><h3>Pools</h3>
+</td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.pools
+  (:require [io.alphatier.constraints :as constraints]))</pre></td></tr><tr><td class="docs"><h3>Pools</h3>
 
 <p>A pool represents a snapshot of a set of executors and their tasks. Both executors and tasks are packaged in maps
 with their IDs as key.</p>
 </td><td class="codes"><pre class="brush: clojure">(defrecord Pool
-           [executors tasks])</pre></td></tr><tr><td class="docs"><h3>Executors</h3>
+           [executors tasks constraints])</pre></td></tr><tr><td class="docs"><h3>Executors</h3>
 
 <p>Executors are the workforce of a Alphatier. They have an unique identifier and a status that is <code>:registered</code> or
 <code>:unregistered</code>. In addition, they keep various information about themself and their current work:</p>
@@ -3168,30 +3163,28 @@ that must be reserved and guaranteed for this task.</li>
 </ul>
 </td><td class="codes"><pre class="brush: clojure">(defrecord Task
            [id executor-id lifecycle-phase resources metadata metadata-version])</pre></td></tr><tr><td class="docs"><h2>Pool Functions</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>A new pool keeps track of the state of the pool. Access to it should be done via the <code>get-snapshot</code> function.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>A new pool keeps track of the state of the pool. Access to it should be done via the <code>get-snapshot</code> function.
+   The new pool has already all built-in constraints added.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn create
   []
   (ref (map-&gt;Pool {:executors {}
-                   :tasks {}})))</pre></td></tr><tr><td class="docs"><p>When getting a snapshot of a pool, you get an immutable view of the current executors and tasks. This view is
+                   :tasks {}
+                   :constraints
+                     {:pre
+                        {:optimistic-locking constraints/optimistic-locking}
+                      :post
+                        {:no-resource-overbooking constraints/no-resource-overbooking}}})))</pre></td></tr><tr><td class="docs"><p>When getting a snapshot of a pool, you get an immutable view of the current executors and tasks. This view is
    guarenteed to be consistent.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn get-snapshot
   [pool]
-  (deref pool))</pre></td></tr><tr><td class="docs"><h3>Java usage</h3>
-
-<p>All namespaces have a corresponding Java class, that enables access to the here defined functions. For example,
-the <code>get-snapshot</code> function can be accessed via the <code>Pools</code> class:</p>
-
-<pre><code>Object pool = Pools.create();
-Pool snapshot = Pools.getSnapshot();
-</code></pre>
-</td><td class="codes"><pre class="brush: clojure">(gen-class
-  :name &quot;io.alphatier.Pools&quot;
-  :main false
-  :prefix &quot;java-&quot;
-  :methods [#^{:static true} [create [] Object]
-            #^{:static true} [getSnapshot [Object] io.alphatier.pools.Pool]])</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn- java-create [] (create))
-(defn- java-getSnapshot [pool] (get-snapshot pool))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.schedulers" name="io.alphatier.schedulers"><h1 class="project-name">io.alphatier.schedulers</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Schedulers</h2>
+  (select-keys @pool [:executors :tasks]))</pre></td></tr><tr><td class="docs"><p>It is also possible to create a new pool based on an old state. This can be used to simulate commits based on a real
+   pool that should not affect the live system or to make a pool durable and restore it later. The new pool has the
+   default constraints added, not necessarily the constraints when the snapshot was made.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn create-with-state
+  [snapshot]
+  (let [pool (create)]
+    (dosync
+      (alter pool merge snapshot))))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.schedulers" name="io.alphatier.schedulers"><h1 class="project-name">io.alphatier.schedulers</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Schedulers</h2>
 
 <p>Schedulers are the decision maker in the Alphatier world. They are able to create and kill tasks every time they like
 to. Possible scenarios are server cluster management where every executor represents one host in your data centers
@@ -3236,20 +3229,7 @@ transaction runs, the transaction will be repeated with the new state.</p>
   (alter pool update-in [:tasks (:id task) :metadata-version] inc))</pre></td></tr><tr><td class="docs"><p>Killing a tasks sets its lifecycle-phase to <code>:kill</code>, so that the executor can actually kill it.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- kill-task
   [pool task]
-  (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))</pre></td></tr><tr><td class="docs"><h3>Built-in constraints</h3>
-
-<p>Currently, schedulers are not allowed to exceed resources of executors when creating new tasks.</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>The sum of the reserved resources of one type should not be higher than the given resource of the executor.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- resource-exceeded?
-  [pool executor key]
-  (let [tasks (map #(get (:tasks pool) %) (:task-ids executor))]
-    (&gt; (reduce + (map #(get-in % [:resources key]) tasks))
-       (get (:resources executor) key))))</pre></td></tr><tr><td class="docs"><p>Not a single resource of an executor must be exceeded.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- resources-exceeded?
-  [pool executor]
-  (not-any? #(resource-exceeded? pool executor %) (keys (:resources executor))))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn- executors-exceeding-resource-limits [pool]
-  (filter #(resources-exceeded? pool %) @(:executors pool)))</pre></td></tr><tr><td class="docs"><h3>How to implement a scheduler?</h3>
+  (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))</pre></td></tr><tr><td class="docs"><h3>How to implement a scheduler?</h3>
 
 <p>The basic workflow for a scheduler looks like the following:</p>
 
@@ -3291,45 +3271,63 @@ for optimistic locking:</p>
                                        allow-partial-commit false
                                        force false}}]
   (dosync
-    ; TODO precheck correct metadata and tasks versions
-    ; (filter matches-version? tasks) (no-partial? (throw))
-    (dorun (map #(create-task pool %) create))
-    (dorun (map #(update-task pool %) update))
-    (dorun (map #(kill-task pool %) kill))
+    (when-not force
+      (comment &quot;TODO run pre-constraints&quot;))
+    ; TODO fail fast if rejections and no partial commit
+    (doseq [task create] (create-task pool task))
+    (doseq [task update] (update-task pool task))
+    (doseq [task kill] (kill-task pool task))
     ; TODO postcheck all constrains (resource limits, scheduler limits, ...)
-    (let [broken-executors (executors-exceeding-resource-limits pool)]
-      (when (not (empty? broken-executors))
-        (throw (io.alphatier.schedulers.RejectedException.)))))
-  pool)</pre></td></tr><tr><td class="docs"><h3>Java usage</h3>
-
-<p>The <code>commit</code> function can be accessed via the <code>Schedulers</code> utility class.</p>
-
-<pre><code>Schedulers.commit(commitId, schedulerId, commitOptions);
-</code></pre>
-</td><td class="codes"><pre class="brush: clojure">(gen-class
-  :name &quot;io.alphatier.Schedulers&quot;
-  :main false
-  :prefix &quot;java-&quot;
-  :methods [#^{:static true} [commit [String String java.util.Map] void]])</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn- java-commit [pool commitId schedulerId options] (commit pool commitId, schedulerId, options))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.constraints" name="io.alphatier.constraints"><h1 class="project-name">io.alphatier.constraints</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Constraints</h2>
+    (when-not force
+      (comment &quot;TODO run post-constraints&quot;))
+    ;    (let [broken-executors (executors-exceeding-resource-limits pool)]
+    ;      (when (not (empty? broken-executors))
+    ;        (throw (io.alphatier.schedulers.RejectedException. (pr-str &quot;broken executors&quot; broken-executors)))))))
+  pool)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.constraints" name="io.alphatier.constraints"><h1 class="project-name">io.alphatier.constraints</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Constraints</h2>
 
 <p>In order to prevent total chaos with multiple schedulers, one can define constraints to limit the possibilities of
 schedulers running amok. Some constraints are already built in like forbidding resource overbooking. Others can be
 defined by yourself.</p>
-</td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.constraints)</pre></td></tr><tr><td class="docs"><h3>not yet implemented</h3>
 
-<p>This functionality is not yet implemented.</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><h3>Java usage</h3>
+<p>In general, there are two kinds of constraints: <strong>pre-constraints</strong> that run before the commit is applied and
+<strong>post-constraints</strong> that are run after the commit. All constraints can return a list of task IDs that should get
+rejected. All constraints run within the commit transaction and can lead to atomic rejections of the commit.</p>
 
-<p>The here defined functions can be accessed via the <code>Constraints</code> utility class.</p>
-</td><td class="codes"><pre class="brush: clojure">(gen-class
-  :name &quot;io.alphatier.Constraints&quot;
-  :main false
-  :prefix &quot;java-&quot;)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.executors" name="io.alphatier.executors"><h1 class="project-name">io.alphatier.executors</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Executors</h2>
+<p><strong>post-constraints</strong> are functions with a signature <code>(fn [commit pre-snapshot])</code>, while <strong>post-constraints</strong> require
+the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.</p>
+</td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.constraints
+  (:import [clojure.lang IFn])
+  (:require [clojure.core.incubator :as clojure-incubator]))</pre></td></tr><tr><td class="docs"><p>To add a constraint to a pool, you have to provide its type which is <code>:pre</code> or <code>:post</code>.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn add
+  [pool type name fn]
+  (dosync
+    (alter pool assoc-in [:constraints type name] fn)))</pre></td></tr><tr><td class="docs"><p>Constraints are identified by their name and can be removed by it.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn del
+  [pool type name]
+  (dosync
+    (alter pool clojure-incubator/dissoc-in [:constraints type name])))</pre></td></tr><tr><td class="docs"><h3>Built-in constraints</h3>
+
+<p>This list of built-in constraints is automatically added to all new pools.</p>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defn optimistic-locking [commit pre-snapshot]
+  [])</pre></td></tr><tr><td class="docs"><p>The sum of the reserved resources of one type should not be higher than the given resource of the executor.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- resource-exceeded?
+  [pool executor key]
+  (let [tasks (map #(get-in @pool [:tasks %]) (:task-ids executor))]
+    (&gt; (reduce + (map #(get-in % [:resources key]) tasks))
+       (get (:resources executor) key))))</pre></td></tr><tr><td class="docs"><p>Not a single resource of an executor must be exceeded.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- resources-exceeded?
+  [pool executor]
+  (some #(resource-exceeded? pool executor %) (keys (:resources executor))))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defn- executors-exceeding-resource-limits [pool]
+  (filter #(resources-exceeded? pool %) (:executors @pool)))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defn no-resource-overbooking [commit pre-snapshot post-snapshot]
+  [])</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.executors" name="io.alphatier.executors"><h1 class="project-name">io.alphatier.executors</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Executors</h2>
 
 <p>Executors are on the other side of schedulers. They are the workforce of Alphatier and execute whatever the
 schedulers wants them to do.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.executors
+  (:import [clojure.lang IFn])
   (:require [clojure.core.incubator :as clojure-incubator]
             [io.alphatier.pools :as core]))</pre></td></tr><tr><td class="docs"><h3>Executor Management</h3>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Registers an executor in the pool. Overwrites old entries.</p>
@@ -3386,17 +3384,5 @@ schedulers wants them to do.</p>
       (alter pool clojure-incubator/dissoc-in [:tasks task-id])
       (alter pool update-in [:executors executor-id :task-ids] #(remove #{task-id} %))
       (alter pool update-in [:executors executor-id :tasks-version] inc)))
-  pool)</pre></td></tr><tr><td class="docs"><h3>Java usage</h3>
-
-<p>The here defined functions can be accessed via the <code>Executors</code> utility class.</p>
-
-<pre><code>Executors.register(...);
-</code></pre>
-</td><td class="codes"><pre class="brush: clojure">(gen-class
-  :name &quot;io.alphatier.Executors&quot;
-  :main false
-  :prefix &quot;java-&quot;)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn- java-register [pool executorId resources options] (register pool executorId resources options))
-(defn- java-update [pool executorId metadata] (register pool executorId metadata))
-(defn- java-update [pool executorId metadata] (register pool executorId metadata))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/fogus/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
+  pool)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/fogus/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
        SyntaxHighlighter.all()</script></body></html>

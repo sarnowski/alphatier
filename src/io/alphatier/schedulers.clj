@@ -6,13 +6,12 @@
 ;; scenario is your office kitchen where each coffee machine can brew 4 coffees at a time. Every coffee machine
 ;; can be represented with an executor and you write a scheduler that is able to manage which coffee machine brews which
 ;; colleague's coffee.
-(ns io.alphatier.schedulers)
-
-
+;;
+;;
 ;; ### ACID without D
 ;;
 ;; Alphatier changes are [ACID](http://en.wikipedia.org/wiki/ACID) without the D (durable). **A**tomicity is optional
-;; for the scheduler, **C**onsistency and **I**solation are guarenteed. The pools are an in-memory datastructure and
+;; for the scheduler, **C**onsistency and **I**solation are guarenteed. The pools are an in-memory datastructures and
 ;; therefor aren't durable across JVM restarts.
 ;;
 ;; Task changes on the pool happen via a commit. A commit may contain multiple creation or kill requests for tasks.
@@ -24,8 +23,8 @@
 ;;
 ;; Isolation is provided through [Clojure's STM](http://clojure.org/refs). If writes happen to the state while a
 ;; transaction runs, the transaction will be repeated with the new state.
-(gen-class :name "io.alphatier.schedulers.RejectedException"
-           :extends IllegalStateException)
+(ns io.alphatier.schedulers
+  (:require [io.alphatier.pools :as pools]))
 
 ;; ## Commits
 ;;
@@ -55,26 +54,6 @@
   (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))
 
 
-;; ### Built-in constraints
-;;
-;; Currently, schedulers are not allowed to exceed resources of executors when creating new tasks.
-
-(defn- resource-exceeded?
-  "The sum of the reserved resources of one type should not be higher than the given resource of the executor."
-  [pool executor key]
-  (let [tasks (map #(get-in @pool [:tasks %]) (:task-ids executor))]
-    (> (reduce + (map #(get-in % [:resources key]) tasks))
-       (get (:resources executor) key))))
-
-(defn- resources-exceeded?
-  "Not a single resource of an executor must be exceeded."
-  [pool executor]
-  (some #(resource-exceeded? pool executor %) (keys (:resources executor))))
-
-(defn- executors-exceeding-resource-limits [pool]
-  (filter #(resources-exceeded? pool %) (:executors @pool)))
-
-
 ;; ### How to implement a scheduler?
 ;;
 ;; The basic workflow for a scheduler looks like the following:
@@ -87,9 +66,8 @@
 (defn commit
 "### Committing
 
-To execute a commit, you need to provide at least a commit identifier and an identifier for your scheduler. The
-commit ID is used for debugging purposes (e.g. logs). The scheduler ID will be used to apply user defined constraints
-to it. The following options are available:
+To execute a commit, you need to provide at least the identifier for your scheduler. The scheduler ID will be used to
+apply user defined constraints to it. The following options are available:
 
 * `:create` contains a list of all tasks to create
 * `:update` contains a list of all tasks to update
@@ -105,35 +83,28 @@ for optimistic locking:
 * `:task-metadata-version`
 
 If set, the versions will be checked with the current pool state and rejected if not equal."
-  [pool commit-id scheduler-id & {:keys [create update kill allow-partial-commit force]
-                                  :or {create []
-                                       update []
-                                       kill []
-                                       allow-partial-commit false
-                                       force false}}]
+  [pool scheduler-id & {:keys [create update kill allow-partial-commit force]
+                        :or {create []
+                             update []
+                             kill []
+                             allow-partial-commit false
+                             force false}}]
   (dosync
-    ; TODO precheck correct metadata and tasks versions
-    ; (filter matches-version? tasks) (no-partial? (throw))
+    (let [pre-snapshot (pools/get-snapshot pool)]
+      (when-not force
+        (comment "TODO run pre-constraints"))
+      ; TODO fail fast if rejections and no partial commit
 
-    (dorun (map #(create-task pool %) create))
-    (dorun (map #(update-task pool %) update))
-    (dorun (map #(kill-task pool %) kill))
+      (doseq [task create] (create-task pool task))
+      (doseq [task update] (update-task pool task))
+      (doseq [task kill] (kill-task pool task))
 
-    ; TODO postcheck all constrains (resource limits, scheduler limits, ...)
-    (let [broken-executors (executors-exceeding-resource-limits pool)]
-      (when (not (empty? broken-executors))
-        (throw (io.alphatier.schedulers.RejectedException. (pr-str "broken executors" broken-executors))))))
-  pool)
+      ; TODO postcheck all constrains (resource limits, scheduler limits, ...)
+      (when-not force
+        (comment "TODO run post-constraints"
+                 (throw (ex-info "commit rejected" {:rejected-tasks []
+                                                    :pre-snapshot pre-snapshot}))))
 
-;; ### Java usage
-;;
-;; The `commit` function can be accessed via the `Schedulers` utility class.
-;;
-;;     Schedulers.commit(commitId, schedulerId, commitOptions);
-(gen-class
-  :name "io.alphatier.Schedulers"
-  :main false
-  :prefix "java-"
-  :methods [#^{:static true} [commit [String String java.util.Map] void]])
-
-(defn- java-commit [pool commitId schedulerId options] (commit pool commitId, schedulerId, options))
+      {:rejected-tasks []
+       :pre-snapshot pre-snapshot
+       :post-snapshot (pools/get-snapshot pool)})))

@@ -18,14 +18,15 @@
 ;; basic minimum, Alphatier checks that resources are not exceeded. It can also check for other criteria based on
 ;; predefined constraints.
 ;;
-(ns io.alphatier.pools)
+(ns io.alphatier.pools
+  (:require [io.alphatier.constraints :as constraints]))
 
 ;; ### Pools
 ;;
 ;; A pool represents a snapshot of a set of executors and their tasks. Both executors and tasks are packaged in maps
 ;; with their IDs as key.
 (defrecord Pool
-           [executors tasks])
+           [executors tasks constraints])
 
 ;; ### Executors
 ;;
@@ -61,41 +62,29 @@
 ;;
 
 (defn create
-  "A new pool keeps track of the state of the pool. Access to it should be done via the `get-snapshot` function."
+  "A new pool keeps track of the state of the pool. Access to it should be done via the `get-snapshot` function.
+   The new pool has already all built-in constraints added."
   []
   (ref (map->Pool {:executors {}
-                   :tasks {}})))
-
+                   :tasks {}
+                   :constraints
+                     {:pre
+                        {:optimistic-locking constraints/optimistic-locking}
+                      :post
+                        {:no-resource-overbooking constraints/no-resource-overbooking}}})))
 
 (defn get-snapshot
   "When getting a snapshot of a pool, you get an immutable view of the current executors and tasks. This view is
    guarenteed to be consistent."
   [pool]
-  (deref pool))
-
+  (select-keys @pool [:executors :tasks]))
 
 (defn create-with-state
   "It is also possible to create a new pool based on an old state. This can be used to simulate commits based on a real
-   pool that should not affect the live system or to make a pool durable and restore it later."
+   pool that should not affect the live system or to make a pool durable and restore it later. The new pool has the
+   default constraints added, not necessarily the constraints when the snapshot was made."
   [snapshot]
-  (ref (map->Pool snapshot)))
-
-
-;; ### Java usage
-;;
-;; All namespaces have a corresponding Java class, that enables access to the here defined functions. For example,
-;; the `get-snapshot` function can be accessed via the `Pools` class:
-;;
-;;     Object pool = Pools.create();
-;;     Pool snapshot = Pools.getSnapshot();
-(gen-class
-  :name "io.alphatier.Pools"
-  :main false
-  :prefix "java-"
-  :methods [#^{:static true} [create [] Object]
-            #^{:static true} [createWithState [io.alphatier.pools.Pool] Object]
-            #^{:static true} [getSnapshot [Object] io.alphatier.pools.Pool]])
-
-(defn- java-create [] (create))
-(defn- java-createWithState [snapshot] (create-with-state snapshot))
-(defn- java-getSnapshot [pool] (get-snapshot pool))
+  (let [pool (create)]
+    (dosync
+      (alter pool merge snapshot))
+    pool))
