@@ -16,6 +16,10 @@ The source code is managed via [git](http://www.git-scm.com/) and hosted on
 [Github help pages](https://help.github.com/articles/working-with-repositories) for more
 information.
 
+The source is tested on every update by [Travis-CI](https://travis-ci.org/sarnowski/alphatier).
+Current status:
+[![Build Status](https://travis-ci.org/sarnowski/alphatier.svg?branch=master)](https://travis-ci.org/sarnowski/alphatier)
+
 The build process of this library is managed by [Leiningen](http://leiningen.org/). The
 following commands have to be executed at the root of your project checkout:
 
@@ -32,6 +36,7 @@ state.
 
 The test suite is implemented in the `test/` directory. The test command runs all implemented
 unit tests.
+
 
 ### Building a jar artifact
 
