@@ -16,7 +16,7 @@
 ;;
 ;; Alphatier makes sure, that certain constraints are met when schedulers want to commit new tasks to the pool. At a
 ;; basic minimum, Alphatier checks that resources are not exceeded. It can also check for other criteria based on
-;; predefined constraints.
+;; [predefined constraints](#io.alphatier.constraints).
 ;;
 (ns io.alphatier.pools
   (:require [io.alphatier.constraints :as constraints]))

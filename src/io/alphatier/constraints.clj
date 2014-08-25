@@ -8,7 +8,7 @@
 ;; **post-constraints** that are run after the commit. All constraints can return a list of task IDs that should get
 ;; rejected. All constraints run within the commit transaction and can lead to atomic rejections of the commit.
 ;;
-;; **post-constraints** are functions with a signature `(fn [commit pre-snapshot])`, while **post-constraints** require
+;; **pre-constraints** are functions with a signature `(fn [commit pre-snapshot])`, while **post-constraints** require
 ;; the following signature: `(fn [commit pre-snapshot post-snapshot])`.
 (ns io.alphatier.constraints
   (:import [clojure.lang IFn])

@@ -4,7 +4,7 @@ Alphatier is a resource management library. It is designed to allow different
 schedulers to share the resources of a pool of executors in order to execute
 tasks with those.
 
-Read the [detailed documentation](#io.alphatier.core) below to get an in-depth
+Read the [detailed documentation](#io.alphatier.pools) below to get an in-depth
 understanding.
 
 ## License
@@ -3071,7 +3071,7 @@ net.brehaut.ClojureTools = (function (SH) {
 schedulers to share the resources of a pool of executors in order to execute
 tasks with those.</p>
 
-<p>Read the <a href="#io.alphatier.core">detailed documentation</a> below to get an in-depth
+<p>Read the <a href="#io.alphatier.pools">detailed documentation</a> below to get an in-depth
 understanding.</p>
 
 <h2>License</h2>
@@ -3126,7 +3126,7 @@ decision to Alphatier.</li>
 
 <p>Alphatier makes sure, that certain constraints are met when schedulers want to commit new tasks to the pool. At a
 basic minimum, Alphatier checks that resources are not exceeded. It can also check for other criteria based on
-predefined constraints.</p>
+<a href="#io.alphatier.constraints">predefined constraints</a>.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.pools
   (:require [io.alphatier.constraints :as constraints]))</pre></td></tr><tr><td class="docs"><h3>Pools</h3>
 
@@ -3300,7 +3300,7 @@ defined by yourself.</p>
 <strong>post-constraints</strong> that are run after the commit. All constraints can return a list of task IDs that should get
 rejected. All constraints run within the commit transaction and can lead to atomic rejections of the commit.</p>
 
-<p><strong>post-constraints</strong> are functions with a signature <code>(fn [commit pre-snapshot])</code>, while <strong>post-constraints</strong> require
+<p><strong>pre-constraints</strong> are functions with a signature <code>(fn [commit pre-snapshot])</code>, while <strong>post-constraints</strong> require
 the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.constraints
   (:import [clojure.lang IFn])
@@ -3349,7 +3349,10 @@ schedulers wants them to do.</p>
   (:import [clojure.lang IFn])
   (:require [clojure.core.incubator :as clojure-incubator]
             [io.alphatier.pools :as core]))</pre></td></tr><tr><td class="docs"><h3>Executor Management</h3>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Registers an executor in the pool. Overwrites old entries.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>Only registered executors are eligible to receive tasks from schedulers. The registration can also provide
+   information about already running tasks. The meta data can signal various constraints to the schedulers like
+   environment or operating system information or other capabilities. If an executor gets reregistered, all previous
+   information get overwritten.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn register
   [pool executor-id resources &amp; {:keys [metadata
                                         metadata-version
@@ -3375,19 +3378,24 @@ schedulers wants them to do.</p>
     (doseq [task tasks]
       ; TODO do more intelligent merges e.g. use metadata version and add tasks to executor if he doesnt know yet
       (alter pool assoc-in [:tasks (:id task)] task)))
-  pool)</pre></td></tr><tr><td class="docs"><p>Updates an executor's metadata and its metadata-version.</p>
+  pool)</pre></td></tr><tr><td class="docs"><p>Executors can update their meta data while being registered. This can be used to inform schedulers about general
+   executor state. For example, one could set a <code>maintenance</code> flag to signal that an executor does not accept new tasks
+   until the flag is removed again.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn update
   [pool executor-id metadata]
   (dosync
     (alter pool update-in [:executors executor-id :metadata] merge metadata)
     (alter pool update-in [:executors executor-id :metadata-version] inc))
-  pool)</pre></td></tr><tr><td class="docs"><p>Marks an executor as unregistered.</p>
+  pool)</pre></td></tr><tr><td class="docs"><p>If an executor shuts down (expected or unexpectedly), it has to be unregistered, so that schedulers do not use it
+   anymore.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn unregister
   [pool executor-id]
   (dosync
     (alter pool assoc-in [:executors executor-id :status] :unregistered))
   pool)</pre></td></tr><tr><td class="docs"><h3>Task Management</h3>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Update task lifecycle-phase and metadata with the corresponding metadata-version.</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>The executor has to push the lifecycle-phase to <code>:created</code> as soon as the task was created. In addition, the executor
+   could update the meta data of a task as well. This could be internal state of the task like a progress state. It is
+   possible to do lightweight IPC with the scheduler that way.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn update-task
   [pool task-id lifecycle-phase metadata]
   (dosync
@@ -3395,7 +3403,8 @@ schedulers wants them to do.</p>
     (alter pool assoc-in [:tasks task-id :lifecycle-phase] lifecycle-phase)
     (alter pool update-in [:tasks task-id :metadata] merge metadata)
     (alter pool update-in [:tasks task-id :metadata-version] inc))
-  pool)</pre></td></tr><tr><td class="docs"><p>Removes a task completely.</p>
+  pool)</pre></td></tr><tr><td class="docs"><p>If a task was requested to be killed, the execuor has to kill the task and report back, that the task was actually
+   killed. This leads to the complete removal of the task from the pool.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn kill-task
   [pool task-id]
   (dosync

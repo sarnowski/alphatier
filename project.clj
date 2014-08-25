@@ -5,7 +5,7 @@ Alphatier is a resource management library. It is designed to allow different
 schedulers to share the resources of a pool of executors in order to execute
 tasks with those.
 
-Read the [detailed documentation](#io.alphatier.core) below to get an in-depth
+Read the [detailed documentation](#io.alphatier.pools) below to get an in-depth
 understanding.
 
 ## License

@@ -54,7 +54,7 @@ comments from the source code.
 
 ## License
 
-Copyright (c) 2014 Tobias Sarnowski <tobias@sarnowski.io>
+Copyright (c) 2014 Tobias Sarnowski &lt;tobias@sarnowski.io&gt;
 
 Permission to use, copy, modify, and distribute this software for any
 purpose with or without fee is hereby granted, provided that the above

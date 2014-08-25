@@ -12,7 +12,10 @@
 ;;
 
 (defn register
-  "Registers an executor in the pool. Overwrites old entries."
+  "Only registered executors are eligible to receive tasks from schedulers. The registration can also provide
+   information about already running tasks. The meta data can signal various constraints to the schedulers like
+   environment or operating system information or other capabilities. If an executor gets reregistered, all previous
+   information get overwritten."
   [pool executor-id resources & {:keys [metadata
                                         metadata-version
                                         tasks
@@ -40,7 +43,9 @@
   pool)
 
 (defn update
-  "Updates an executor's metadata and its metadata-version."
+  "Executors can update their meta data while being registered. This can be used to inform schedulers about general
+   executor state. For example, one could set a `maintenance` flag to signal that an executor does not accept new tasks
+   until the flag is removed again."
   [pool executor-id metadata]
   (dosync
     (alter pool update-in [:executors executor-id :metadata] merge metadata)
@@ -48,7 +53,8 @@
   pool)
 
 (defn unregister
-  "Marks an executor as unregistered."
+  "If an executor shuts down (expected or unexpectedly), it has to be unregistered, so that schedulers do not use it
+   anymore."
   [pool executor-id]
   (dosync
     (alter pool assoc-in [:executors executor-id :status] :unregistered))
@@ -58,7 +64,9 @@
 ;;
 
 (defn update-task
-  "Update task lifecycle-phase and metadata with the corresponding metadata-version."
+  "The executor has to push the lifecycle-phase to `:created` as soon as the task was created. In addition, the executor
+   could update the meta data of a task as well. This could be internal state of the task like a progress state. It is
+   possible to do lightweight IPC with the scheduler that way."
   [pool task-id lifecycle-phase metadata]
   (dosync
     ; TODO make sure lifecycle-phase can only go forward, not back
@@ -68,7 +76,8 @@
   pool)
 
 (defn kill-task
-  "Removes a task completely."
+  "If a task was requested to be killed, the execuor has to kill the task and report back, that the task was actually
+   killed. This leads to the complete removal of the task from the pool."
   [pool task-id]
   (dosync
     (let [executor-id (get-in @(:tasks pool) [task-id :executor-id])]
