@@ -24,7 +24,6 @@
 ;; Isolation is provided through [Clojure's STM](http://clojure.org/refs). If writes happen to the state while a
 ;; transaction runs, the transaction will be repeated with the new state.
 (ns io.alphatier.schedulers
-  (:import [com.sun.xml.internal.bind.v2 TODO])
   (:require [io.alphatier.pools :as pools]))
 
 ;; ## Commits
@@ -42,9 +41,13 @@
 (defn- create-task
   "Creating a tasks registers it in the pool and assigns it to the given executor."
   [pool task]
-  (alter pool assoc-in [:tasks (:id task)] task)
-  (alter pool update-in [:executors (:executor-id task) :task-ids] conj (:id task))
-  (alter pool update-in [:executors (:executor-id task) :tasks-version] inc))
+  (let [task (pools/map->Task (merge
+                                {:lifecycle-phase :create
+                                 :metadata-version 0}
+                                task))]
+    (alter pool assoc-in [:tasks (:id task)] task)
+    (alter pool update-in [:executors (:executor-id task) :task-ids] conj (:id task))
+    (alter pool update-in [:executors (:executor-id task) :tasks-version] inc)))
 
 (defn- update-task
   "Updating a task modifies the task's metadata."
@@ -91,6 +94,7 @@ You can not issue two actions for the same task at once."
                   :or {force false}}]
 
   ; TODO check for duplicate task IDs
+  ; TODO validate input - does executor id exist? etc
 
   (dosync
     (let [pre-snapshot (pools/get-snapshot pool)

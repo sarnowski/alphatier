@@ -3210,7 +3210,6 @@ constraints. Built-in is optimistic locking of executor or task data and protect
 <p>Isolation is provided through <a href="http://clojure.org/refs">Clojure's STM</a>. If writes happen to the state while a
 transaction runs, the transaction will be repeated with the new state.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.schedulers
-  (:import [com.sun.xml.internal.bind.v2 TODO])
   (:require [io.alphatier.pools :as pools]))</pre></td></tr><tr><td class="docs"><h2>Commits</h2>
 
 <p>All changes to the pool by a scheduler have to go through a commit. A scheduler can do three actions:</p>
@@ -3224,9 +3223,13 @@ transaction runs, the transaction will be repeated with the new state.</p>
 </td><td class="codes"><pre class="brush: clojure">(defrecord Result [rejected-tasks pre-snapshot post-snapshot])</pre></td></tr><tr><td class="docs"><p>Creating a tasks registers it in the pool and assigns it to the given executor.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- create-task
   [pool task]
-  (alter pool assoc-in [:tasks (:id task)] task)
-  (alter pool update-in [:executors (:executor-id task) :task-ids] conj (:id task))
-  (alter pool update-in [:executors (:executor-id task) :tasks-version] inc))</pre></td></tr><tr><td class="docs"><p>Updating a task modifies the task's metadata.</p>
+  (let [task (pools/map-&gt;Task (merge
+                                {:lifecycle-phase :create
+                                 :metadata-version 0}
+                                task))]
+    (alter pool assoc-in [:tasks (:id task)] task)
+    (alter pool update-in [:executors (:executor-id task) :task-ids] conj (:id task))
+    (alter pool update-in [:executors (:executor-id task) :tasks-version] inc)))</pre></td></tr><tr><td class="docs"><p>Updating a task modifies the task's metadata.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- update-task
   [pool task]
   (alter pool update-in [:tasks (:id task) :metadata] merge (:metadata task))
@@ -3267,6 +3270,7 @@ intended to relpay already committed commits (e.g. in an replication mode).</p>
   [pool commit &amp; {:keys [force]
                   :or {force false}}]
   ; TODO check for duplicate task IDs
+  ; TODO validate input - does executor id exist? etc
   (dosync
     (let [pre-snapshot (pools/get-snapshot pool)
           rejections (atom [])]
