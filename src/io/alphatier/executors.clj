@@ -80,7 +80,7 @@
    killed. This leads to the complete removal of the task from the pool."
   [pool task-id]
   (dosync
-    (let [executor-id (get-in @(:tasks pool) [task-id :executor-id])]
+    (let [executor-id (get-in @pool [:tasks task-id :executor-id])]
       (alter pool clojure-incubator/dissoc-in [:tasks task-id])
       (alter pool update-in [:executors executor-id :task-ids] #(remove #{task-id} %))
       (alter pool update-in [:executors executor-id :tasks-version] inc)))
