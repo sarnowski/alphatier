@@ -6,17 +6,28 @@
   (is (not failure-reason)))
 
 (def ^:private test-executors (atom 0))
+(def ^:private test-tasks (atom 0))
 
 (defn create-test-executor []
   (let [id-no (swap! test-executors inc)]
     (pools/map->Executor {:id (str "test-executor-" id-no)
-                    :status :registered
-                    :resources {:memory 100
-                                :cpu 8}
-                    :metadata {}
-                    :metadata-version 0
-                    :task-ids []
-                    :tasks-version 0})))
+                          :status :registered
+                          :resources {:memory 100
+                                      :cpu 8}
+                          :metadata {}
+                          :metadata-version 0
+                          :task-ids []
+                          :tasks-version 0})))
+
+(defn create-test-task [executor-id]
+  (let [id-no (swap! test-executors inc)]
+    (pools/map->Task {:id (str "test-task-" id-no)
+                      :executor-id executor-id
+                      :lifecycle-phase :create
+                      :resources {:memory 10
+                                  :cpu 1}
+                      :metadata {:type :generated}
+                      :metadata-version 0})))
 
 (defn create-test-pool []
   (let [pool (pools/create)

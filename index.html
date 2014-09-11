@@ -3412,7 +3412,7 @@ schedulers wants them to do.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn kill-task
   [pool task-id]
   (dosync
-    (let [executor-id (get-in @(:tasks pool) [task-id :executor-id])]
+    (let [executor-id (get-in @pool [:tasks task-id :executor-id])]
       (alter pool clojure-incubator/dissoc-in [:tasks task-id])
       (alter pool update-in [:executors executor-id :task-ids] #(remove #{task-id} %))
       (alter pool update-in [:executors executor-id :tasks-version] inc)))

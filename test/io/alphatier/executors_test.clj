@@ -2,7 +2,8 @@
   (:require [clojure.test :refer :all]
             [io.alphatier.executors :refer :all]
             [io.alphatier.tools :as tools]
-            [io.alphatier.pools :as pools]))
+            [io.alphatier.pools :as pools]
+            [io.alphatier.schedulers :as schedulers]))
 
 
 (deftest register-executor-test
@@ -56,3 +57,25 @@
             unregistered-executor (get executors (:id executor))]
         (is unregistered-executor)
         (is (= :unregistered (:status unregistered-executor)))))))
+
+(deftest update-instance-metadata-test
+  (let [pool (tools/create-test-pool)
+        [executor-id executor] (-> pool pools/get-snapshot :executors first)
+        task (tools/create-test-task executor-id)]
+
+    (schedulers/commit pool (schedulers/map->Commit {:scheduler-id "test-scheduler"
+                                                     :tasks [(merge {:action :create} task)]
+                                                     :allow-partial-commit false}))
+
+    (testing "lifecycle update"
+      (update-task pool (:id task) :creating {:some :test})
+
+      (let [{:keys [executors tasks]} (pools/get-snapshot pool)
+            updated-task (get tasks (:id task))]
+
+        (is (:resources updated-task))
+        (is (= 10 (get-in updated-task [:resources :memory])))
+
+        (is (:metadata updated-task))
+        (is (= :generated (get-in updated-task [:metadata :type])))
+        (is (= :test (get-in updated-task [:metadata :some])))))))
