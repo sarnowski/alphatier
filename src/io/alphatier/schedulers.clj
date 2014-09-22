@@ -97,32 +97,43 @@ You can not issue two actions for the same task at once."
   ; TODO validate input - does executor id exist? etc
 
   (dosync
-    (let [pre-snapshot (pools/get-snapshot pool)
+    (let [pre-snapshot @pool
           rejections (atom [])]
 
       ; Phase 1: check pre constraints
       (when-not force
-        (swap! rejections into
-               (map #(% commit pre-snapshot) (-> commit :constraints :pre))))
+        (swap! rejections (partial reduce
+                                   (fn [rej [_ constraint]]
+                                     (into rej (constraint commit pre-snapshot))))
+               (-> pre-snapshot :constraints :pre)))
+
+      ; TODO if not partial commit, throw exception
+
+      ; TODO filter out tasks that got rejected
 
       ; Phase 2: apply the actions
       (doseq [task (:tasks commit)]
-        (((:action task) commit-actions) pool task))
+        (let [action (-> task :action commit-actions)]
+          (action pool task)))
 
-      (let [post-snapshot (pools/get-snapshot pool)]
+      (let [post-snapshot @pool]
 
         ; Phase 3: check post constraints
         (when-not force
-          (swap! rejections into
-                 (map #(% commit pre-snapshot post-snapshot) (-> commit :constraints :post))))
+          (swap! rejections (partial reduce
+                                     (fn [rej [_ constraint]]
+                                       (into rej (constraint commit pre-snapshot post-snapshot))))
+                            (-> post-snapshot :constraints :post)))
 
         ; reject?
         (if (not (empty? @rejections))  ; TODO allow partial commits
-          (throw (ex-info "commit rejected" (map->Result {:rejected-tasks @rejections
+          (throw (ex-info (str "commit rejected:" @rejections) (map->Result {:accepted-tasks []
+                                                          :rejected-tasks @rejections
                                                           :pre-snapshot pre-snapshot
                                                           :post-snapshot post-snapshot}))))
 
         ; accept!
-        (map->Result {:rejected-tasks @rejections
+        (map->Result {:accepted-tasks [] ; TODO real value
+                      :rejected-tasks @rejections
                       :pre-snapshot pre-snapshot
                       :post-snapshot post-snapshot})))))
