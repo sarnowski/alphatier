@@ -24,7 +24,8 @@
 ;; Isolation is provided through [Clojure's STM](http://clojure.org/refs). If writes happen to the state while a
 ;; transaction runs, the transaction will be repeated with the new state.
 (ns io.alphatier.schedulers
-  (:require [io.alphatier.pools :as pools]))
+  (:require [io.alphatier.pools :as pools]
+            [clojure.set :refer [intersection union superset?]]))
 
 ;; ## Commits
 ;;
@@ -104,18 +105,33 @@ Depending on the `:allow-partial-commit`, the whole commit may get rejected if o
 constraint.
 
 Using the `:force` flag disables all constraint checks and effectivly allows the commit to go through. This is mainly
-intended to relpay already committed commits (e.g. in an replication mode).
+intended to replay already committed commits (e.g. in an replication mode).
 
 You can not issue two actions for the same task at once."
   [pool commit & {:keys [force] :or {force false}}]
 
-  ; TODO check for duplicate task IDs
-  ; TODO validate input - does executor id exist? etc
-  ; TODO are every resource types present/given
+  (let [task-ids (->> commit :tasks (map :id))]
+    (when (distinct? (-> task-ids sort) (-> task-ids set sort))
+      (throw (ex-info "Commit contains duplicate tasks" {}))))
 
   (dosync
+
     (let [pre-snapshot @pool
           rejections (atom {})]
+
+      (let [create-tasks (->> commit :tasks (filter (comp (partial = :create) :action)))]
+        (when (not-empty (intersection (map :id create-tasks) (-> pre-snapshot :tasks keys set)))
+          (throw (ex-info "Commit contains duplicate create tasks" {}))))
+
+      (doseq [action [:update :kill]]
+        (let [tasks (->> commit :tasks (filter #(= (:action %) action)) (map :id))
+              existing-tasks (->> pre-snapshot :tasks (map :id))]
+          (when (and (not-empty tasks)
+                     (not (superset? existing-tasks tasks)))
+            (throw (ex-info (str "Commit contains reference to missing task for " (name action)) {})))))
+
+      ; TODO are every resource types present/given
+      ; TODO validate input - does executor id exist? etc
 
       ; Phase 1: check pre constraints
       (when-not force
