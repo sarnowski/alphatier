@@ -19,11 +19,11 @@
   [pool executor-id resources & {:keys [metadata
                                         metadata-version
                                         tasks
-                                        tasks-version]
+                                        task-ids-version]
                                  :or {metadata {}
                                       metadata-version 0
                                       tasks []
-                                      tasks-version 0}}]
+                                      task-ids-version 0}}]
   (if (empty? resources)
     (throw (IllegalStateException. "at least one resource must be given")))
   (if (not (every? number? (vals resources)))
@@ -36,7 +36,7 @@
                                 :metadata metadata
                                 :metadata-version metadata-version
                                 :task-ids (map :id tasks)
-                                :tasks-version tasks-version}))
+                                :task-ids-version task-ids-version}))
     (doseq [task tasks]
       ; TODO do more intelligent merges e.g. use metadata version and add tasks to executor if he doesnt know yet
       (alter pool assoc-in [:tasks (:id task)] task)))
@@ -83,5 +83,5 @@
     (let [executor-id (get-in @pool [:tasks task-id :executor-id])]
       (alter pool clojure-incubator/dissoc-in [:tasks task-id])
       (alter pool update-in [:executors executor-id :task-ids] #(remove #{task-id} %))
-      (alter pool update-in [:executors executor-id :tasks-version] inc)))
+      (alter pool update-in [:executors executor-id :task-ids-version] inc)))
   pool)

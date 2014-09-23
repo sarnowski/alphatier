@@ -47,7 +47,7 @@
                                 task))]
     (alter pool assoc-in [:tasks (:id task)] task)
     (alter pool update-in [:executors (:executor-id task) :task-ids] conj (:id task))
-    (alter pool update-in [:executors (:executor-id task) :tasks-version] inc)))
+    (alter pool update-in [:executors (:executor-id task) :task-ids-version] inc)))
 
 (defn- update-task
   "Updating a task modifies the task's metadata."

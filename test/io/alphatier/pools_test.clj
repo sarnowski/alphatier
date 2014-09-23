@@ -15,7 +15,7 @@
       (is (empty? (:tasks (get-snapshot pool))))))
 
   (testing "new pool from old snapshot"
-    (let [pool (create-with-state (map->Pool {:executors {:k1 :v1}}))]
+    (let [pool (create-with-snapshot (map->Pool {:executors {:k1 :v1}}))]
       (is pool)
       (is (get-snapshot pool))
       (is (contains? (get-snapshot pool) :executors))

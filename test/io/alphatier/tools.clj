@@ -17,7 +17,7 @@
                           :metadata {}
                           :metadata-version 0
                           :task-ids []
-                          :tasks-version 0})))
+                          :task-ids-version 0})))
 
 (defn create-test-task [executor-id]
   (let [id-no (swap! test-executors inc)]

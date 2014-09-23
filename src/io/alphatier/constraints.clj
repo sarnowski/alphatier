@@ -37,7 +37,7 @@
    current one. In order to achieve the optimistic locking, you can add the following parameters to the supplied tasks:
 
    * `:executor-metadata-version` referencing the executor's metadata version
-   * `:executor-tasks-version` referencing the executor's tasks version
+   * `:executor-task-ids-version` referencing the executor's tasks version
    * `:task-metadata-version` referencing the task's metadata version"
   [commit pre-snapshot]
   ; TODO

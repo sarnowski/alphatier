@@ -40,10 +40,10 @@
 ;; * `metadata-version` is a counter that gets incremented every time the `metadata` change. It can be used for
 ;;   optimistic locking.
 ;; * `task-ids` is a list of task IDs that are assigned to this executor.
-;; * `tasks-version` works similar to the `metadata-version` as it is a counter thats gets incremented when the
+;; * `task-ids-version` works similar to the `metadata-version` as it is a counter thats gets incremented when the
 ;;   `task-ids` list changes.
 (defrecord Executor
-           [id status resources metadata metadata-version task-ids tasks-version])
+           [id status resources metadata metadata-version task-ids task-ids-version])
 
 ;; ### Tasks
 ;;
@@ -79,7 +79,7 @@
   [pool]
   (select-keys @pool [:executors :tasks]))
 
-(defn create-with-state
+(defn create-with-snapshot
   "It is also possible to create a new pool based on an old state. This can be used to simulate commits based on a real
    pool that should not affect the live system or to make a pool durable and restore it later. The new pool has the
    default constraints added, not necessarily the constraints when the snapshot was made."
