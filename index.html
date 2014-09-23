@@ -9,7 +9,8 @@ understanding.
 
 ## License
 
-Copyright &amp;copy; 2014 Tobias Sarnowski &amp;lt;tobias@sarnowski.io&amp;gt;
+Copyright &amp;copy; 2014 [Tobias Sarnowski](mailto:tobias@sarnowski.io),
+[Willi Schönborn](mailto:w.schoenborn@gmail.com)
 
 Permission to use, copy, modify, and distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
@@ -3076,7 +3077,8 @@ understanding.</p>
 
 <h2>License</h2>
 
-<p>Copyright &copy; 2014 Tobias Sarnowski &lt;tobias@sarnowski.io&gt;</p>
+<p>Copyright &copy; 2014 <a href="mailto:tobias@sarnowski.io">Tobias Sarnowski</a>,
+<a href="mailto:w.schoenborn@gmail.com">Willi Schönborn</a></p>
 
 <p>Permission to use, copy, modify, and distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
@@ -3146,11 +3148,11 @@ the executor to the scheduler.</li>
 <li><code>metadata-version</code> is a counter that gets incremented every time the <code>metadata</code> change. It can be used for
 optimistic locking.</li>
 <li><code>task-ids</code> is a list of task IDs that are assigned to this executor.</li>
-<li><code>tasks-version</code> works similar to the <code>metadata-version</code> as it is a counter thats gets incremented when the
+<li><code>task-ids-version</code> works similar to the <code>metadata-version</code> as it is a counter thats gets incremented when the
 <code>task-ids</code> list changes.</li>
 </ul>
 </td><td class="codes"><pre class="brush: clojure">(defrecord Executor
-           [id status resources metadata metadata-version task-ids tasks-version])</pre></td></tr><tr><td class="docs"><h3>Tasks</h3>
+           [id status resources metadata metadata-version task-ids task-ids-version])</pre></td></tr><tr><td class="docs"><h3>Tasks</h3>
 
 <p>Tasks are execution requests for executors. A task has an unique identifier. It holds the following information:</p>
 
@@ -3180,7 +3182,7 @@ that must be reserved and guaranteed for this task.</li>
   (select-keys @pool [:executors :tasks]))</pre></td></tr><tr><td class="docs"><p>It is also possible to create a new pool based on an old state. This can be used to simulate commits based on a real
    pool that should not affect the live system or to make a pool durable and restore it later. The new pool has the
    default constraints added, not necessarily the constraints when the snapshot was made.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn create-with-state
+</td><td class="codes"><pre class="brush: clojure">(defn create-with-snapshot
   [snapshot]
   (let [pool (create)]
     (dosync
@@ -3220,7 +3222,7 @@ transaction runs, the transaction will be repeated with the new state.</p>
 <li><strong>kill</strong> a task</li>
 </ul>
 </td><td class="codes"><pre class="brush: clojure">(defrecord Commit [scheduler-id tasks allow-partial-commit])</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defrecord Result [rejected-tasks pre-snapshot post-snapshot])</pre></td></tr><tr><td class="docs"><p>Creating a tasks registers it in the pool and assigns it to the given executor.</p>
+</td><td class="codes"><pre class="brush: clojure">(defrecord Result [accepted-tasks rejected-tasks pre-snapshot post-snapshot])</pre></td></tr><tr><td class="docs"><p>Creating a tasks registers it in the pool and assigns it to the given executor.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- create-task
   [pool task]
   (let [task (pools/map-&gt;Task (merge
@@ -3229,7 +3231,7 @@ transaction runs, the transaction will be repeated with the new state.</p>
                                 task))]
     (alter pool assoc-in [:tasks (:id task)] task)
     (alter pool update-in [:executors (:executor-id task) :task-ids] conj (:id task))
-    (alter pool update-in [:executors (:executor-id task) :tasks-version] inc)))</pre></td></tr><tr><td class="docs"><p>Updating a task modifies the task's metadata.</p>
+    (alter pool update-in [:executors (:executor-id task) :task-ids-version] inc)))</pre></td></tr><tr><td class="docs"><p>Updating a task modifies the task's metadata.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- update-task
   [pool task]
   (alter pool update-in [:tasks (:id task) :metadata] merge (:metadata task))
@@ -3239,7 +3241,24 @@ transaction runs, the transaction will be repeated with the new state.</p>
   (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))</pre></td></tr><tr><td class="docs"><p>All given tasks must provide the action you want to perform in the <code>:action</code> key.</p>
 </td><td class="codes"><pre class="brush: clojure">(def ^:private commit-actions {:create create-task
                                :update update-task
-                               :kill kill-task})</pre></td></tr><tr><td class="docs"><h3>How to implement a scheduler?</h3>
+                               :kill kill-task})</pre></td></tr><tr><td class="docs"><p>Tasks may get rejected during commit by different pre/post-commit constraints.
+Commits are considered rejected if</p>
+
+<ul>
+<li>all of its tasks are rejected</li>
+<li>at least one of its tasks is rejected but partial commits are disabled</li>
+</ul>
+
+<p>In all other cases the commit is accepted.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- reject-if-needed
+  [commit result]
+  (let [allow-partial-commit? (-&gt; commit :allow-partial-commit)
+        total (-&gt; commit :tasks count)
+        rejects (-&gt; result :rejected-tasks vals flatten count)]
+    (if (or (and allow-partial-commit? (= total rejects))
+            (and (not allow-partial-commit?) (&gt; rejects 0)))
+      (throw (ex-info (str &quot;commit rejected&quot;)
+                      (map-&gt;Result result))))))</pre></td></tr><tr><td class="docs"><h3>How to implement a scheduler?</h3>
 
 <p>The basic workflow for a scheduler looks like the following:</p>
 
@@ -3254,9 +3273,9 @@ tasks or some tasks that you want to shut down)</li>
 <p>A commit has 3 phases:</p>
 
 <ul>
-<li>run all pre constraint checks</li>
+<li>run all pre-commit constraint checks</li>
 <li>apply the requested the actions</li>
-<li>run all post constraint checks</li>
+<li>run all post-commit constraint checks</li>
 </ul>
 
 <p>Depending on the <code>:allow-partial-commit</code>, the whole commit may get rejected if one task does not get approved by a
@@ -3267,34 +3286,44 @@ intended to relpay already committed commits (e.g. in an replication mode).</p>
 
 <p>You can not issue two actions for the same task at once.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn commit
-  [pool commit &amp; {:keys [force]
-                  :or {force false}}]
+  [pool commit &amp; {:keys [force] :or {force false}}]
   ; TODO check for duplicate task IDs
   ; TODO validate input - does executor id exist? etc
+  ; TODO are every resource types present/given
   (dosync
-    (let [pre-snapshot (pools/get-snapshot pool)
-          rejections (atom [])]
+    (let [pre-snapshot @pool
+          rejections (atom {})]
       ; Phase 1: check pre constraints
       (when-not force
-        (swap! rejections into
-               (map #(% commit pre-snapshot) (-&gt; commit :constraints :pre))))
-      ; Phase 2: apply the actions
-      (doseq [task (:tasks commit)]
-        (((:action task) commit-actions) pool task))
-      (let [post-snapshot (pools/get-snapshot pool)]
+        (swap! rejections
+               (partial merge-with into)
+               (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot)])
+                             (-&gt; pre-snapshot :constraints :pre)))))
+      (let [pre-rejected-tasks (-&gt; @rejections vals flatten set)]
+        (reject-if-needed commit {:accepted-tasks []
+                        :rejected-tasks @rejections
+                        :pre-snapshot pre-snapshot
+                        :post-snapshot nil})
+        ; Phase 2: apply the actions
+        (doseq [task (-&gt;&gt; commit :tasks (filter (complement pre-rejected-tasks)))]
+          (let [action (-&gt; task :action commit-actions)]
+            (action pool task))))
+      (let [post-snapshot @pool]
         ; Phase 3: check post constraints
         (when-not force
-          (swap! rejections into
-                 (map #(% commit pre-snapshot post-snapshot) (-&gt; commit :constraints :post))))
-        ; reject?
-        (if (not (empty? @rejections))  ; TODO allow partial commits
-          (throw (ex-info &quot;commit rejected&quot; (map-&gt;Result {:rejected-tasks @rejections
-                                                          :pre-snapshot pre-snapshot
-                                                          :post-snapshot post-snapshot}))))
-        ; accept!
-        (map-&gt;Result {:rejected-tasks @rejections
+          (swap! rejections
+                 (partial merge-with into)
+                 (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot post-snapshot)])
+                               (-&gt; post-snapshot :constraints :post)))))
+        (let [post-rejected-tasks (-&gt; @rejections vals flatten set)
+              accepted-tasks (-&gt;&gt; commit :tasks (filter (complement post-rejected-tasks)))
+              result {:accepted-tasks accepted-tasks
+                      :rejected-tasks @rejections
                       :pre-snapshot pre-snapshot
-                      :post-snapshot post-snapshot})))))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.constraints" name="io.alphatier.constraints"><h1 class="project-name">io.alphatier.constraints</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Constraints</h2>
+                      :post-snapshot post-snapshot}]
+          (reject-if-needed commit result)
+          ; accept!
+          (map-&gt;Result result))))))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.constraints" name="io.alphatier.constraints"><h1 class="project-name">io.alphatier.constraints</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Constraints</h2>
 
 <p>In order to prevent total chaos with multiple schedulers, one can define constraints to limit the possibilities of
 schedulers running amok. Some constraints are already built in like forbidding resource overbooking. Others can be
@@ -3307,9 +3336,7 @@ rejected. All constraints run within the commit transaction and can lead to atom
 <p><strong>pre-constraints</strong> are functions with a signature <code>(fn [commit pre-snapshot])</code>, while <strong>post-constraints</strong> require
 the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.constraints
-  (:import [clojure.lang IFn])
-  (:require [clojure.core.incubator :as clojure-incubator]))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defrecord Violation [task-id executor-id constraint-type constraint-name])</pre></td></tr><tr><td class="docs"><p>To add a constraint to a pool, you have to provide its type which is <code>:pre</code> or <code>:post</code>.</p>
+  (:require [clojure.core.incubator :as clojure-incubator]))</pre></td></tr><tr><td class="docs"><p>To add a constraint to a pool, you have to provide its type which is <code>:pre</code> or <code>:post</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn add
   [pool type name fn]
   (dosync
@@ -3325,7 +3352,7 @@ the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.<
 
 <ul>
 <li><code>:executor-metadata-version</code> referencing the executor's metadata version</li>
-<li><code>:executor-tasks-version</code> referencing the executor's tasks version</li>
+<li><code>:executor-task-ids-version</code> referencing the executor's tasks version</li>
 <li><code>:task-metadata-version</code> referencing the task's metadata version</li>
 </ul>
 </td><td class="codes"><pre class="brush: clojure">(defn optimistic-locking
@@ -3361,11 +3388,11 @@ schedulers wants them to do.</p>
   [pool executor-id resources &amp; {:keys [metadata
                                         metadata-version
                                         tasks
-                                        tasks-version]
+                                        task-ids-version]
                                  :or {metadata {}
                                       metadata-version 0
                                       tasks []
-                                      tasks-version 0}}]
+                                      task-ids-version 0}}]
   (if (empty? resources)
     (throw (IllegalStateException. &quot;at least one resource must be given&quot;)))
   (if (not (every? number? (vals resources)))
@@ -3378,7 +3405,7 @@ schedulers wants them to do.</p>
                                 :metadata metadata
                                 :metadata-version metadata-version
                                 :task-ids (map :id tasks)
-                                :tasks-version tasks-version}))
+                                :task-ids-version task-ids-version}))
     (doseq [task tasks]
       ; TODO do more intelligent merges e.g. use metadata version and add tasks to executor if he doesnt know yet
       (alter pool assoc-in [:tasks (:id task)] task)))
@@ -3415,6 +3442,6 @@ schedulers wants them to do.</p>
     (let [executor-id (get-in @pool [:tasks task-id :executor-id])]
       (alter pool clojure-incubator/dissoc-in [:tasks task-id])
       (alter pool update-in [:executors executor-id :task-ids] #(remove #{task-id} %))
-      (alter pool update-in [:executors executor-id :tasks-version] inc)))
+      (alter pool update-in [:executors executor-id :task-ids-version] inc)))
   pool)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/fogus/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
        SyntaxHighlighter.all()</script></body></html>

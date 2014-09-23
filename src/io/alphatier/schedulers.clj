@@ -35,7 +35,7 @@
 ;; * **kill** a task
 (defrecord Commit [scheduler-id tasks allow-partial-commit])
 
-(defrecord Result [rejected-tasks pre-snapshot post-snapshot])
+(defrecord Result [accepted-tasks rejected-tasks pre-snapshot post-snapshot])
 
 
 (defn- create-task
@@ -65,6 +65,23 @@
                                :update update-task
                                :kill kill-task})
 
+(defn- reject-if-needed
+"Tasks may get rejected during commit by different pre/post-commit constraints.
+Commits are considered rejected if
+
+* all of its tasks are rejected
+* at least one of its tasks is rejected but partial commits are disabled
+
+In all other cases the commit is accepted."
+  [commit result]
+  (let [allow-partial-commit? (-> commit :allow-partial-commit)
+        total (-> commit :tasks count)
+        rejects (-> result :rejected-tasks vals flatten count)]
+    (if (or (and allow-partial-commit? (= total rejects))
+            (and (not allow-partial-commit?) (> rejects 0)))
+      (throw (ex-info (str "commit rejected")
+                      (map->Result result))))))
+
 ;; ### How to implement a scheduler?
 ;;
 ;; The basic workflow for a scheduler looks like the following:
@@ -79,9 +96,9 @@
 
 A commit has 3 phases:
 
-* run all pre constraint checks
+* run all pre-commit constraint checks
 * apply the requested the actions
-* run all post constraint checks
+* run all post-commit constraint checks
 
 Depending on the `:allow-partial-commit`, the whole commit may get rejected if one task does not get approved by a
 constraint.
@@ -90,50 +107,50 @@ Using the `:force` flag disables all constraint checks and effectivly allows the
 intended to relpay already committed commits (e.g. in an replication mode).
 
 You can not issue two actions for the same task at once."
-  [pool commit & {:keys [force]
-                  :or {force false}}]
+  [pool commit & {:keys [force] :or {force false}}]
 
   ; TODO check for duplicate task IDs
   ; TODO validate input - does executor id exist? etc
+  ; TODO are every resource types present/given
 
   (dosync
     (let [pre-snapshot @pool
-          rejections (atom [])]
+          rejections (atom {})]
 
       ; Phase 1: check pre constraints
       (when-not force
-        (swap! rejections (partial reduce
-                                   (fn [rej [_ constraint]]
-                                     (into rej (constraint commit pre-snapshot))))
-               (-> pre-snapshot :constraints :pre)))
+        (swap! rejections
+               (partial merge-with into)
+               (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot)])
+                             (-> pre-snapshot :constraints :pre)))))
 
-      ; TODO if not partial commit, throw exception
-
-      ; TODO filter out tasks that got rejected
-
-      ; Phase 2: apply the actions
-      (doseq [task (:tasks commit)]
-        (let [action (-> task :action commit-actions)]
-          (action pool task)))
+      (let [pre-rejected-tasks (-> @rejections vals flatten set)]
+        (reject-if-needed commit {:accepted-tasks []
+                        :rejected-tasks @rejections
+                        :pre-snapshot pre-snapshot
+                        :post-snapshot nil})
+        ; Phase 2: apply the actions
+        (doseq [task (->> commit :tasks (filter (complement pre-rejected-tasks)))]
+          (let [action (-> task :action commit-actions)]
+            (action pool task))))
 
       (let [post-snapshot @pool]
 
         ; Phase 3: check post constraints
         (when-not force
-          (swap! rejections (partial reduce
-                                     (fn [rej [_ constraint]]
-                                       (into rej (constraint commit pre-snapshot post-snapshot))))
-                            (-> post-snapshot :constraints :post)))
+          (swap! rejections
+                 (partial merge-with into)
+                 (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot post-snapshot)])
+                               (-> post-snapshot :constraints :post)))))
 
-        ; reject?
-        (if (not (empty? @rejections))  ; TODO allow partial commits
-          (throw (ex-info (str "commit rejected:" @rejections) (map->Result {:accepted-tasks []
-                                                          :rejected-tasks @rejections
-                                                          :pre-snapshot pre-snapshot
-                                                          :post-snapshot post-snapshot}))))
-
-        ; accept!
-        (map->Result {:accepted-tasks [] ; TODO real value
+        (let [post-rejected-tasks (-> @rejections vals flatten set)
+              accepted-tasks (->> commit :tasks (filter (complement post-rejected-tasks)))
+              result {:accepted-tasks accepted-tasks
                       :rejected-tasks @rejections
                       :pre-snapshot pre-snapshot
-                      :post-snapshot post-snapshot})))))
+                      :post-snapshot post-snapshot}]
+
+          (reject-if-needed commit result)
+
+          ; accept!
+          (map->Result result))))))

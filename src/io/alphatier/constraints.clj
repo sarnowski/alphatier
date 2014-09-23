@@ -11,10 +11,7 @@
 ;; **pre-constraints** are functions with a signature `(fn [commit pre-snapshot])`, while **post-constraints** require
 ;; the following signature: `(fn [commit pre-snapshot post-snapshot])`.
 (ns io.alphatier.constraints
-  (:import [clojure.lang IFn])
   (:require [clojure.core.incubator :as clojure-incubator]))
-
-(defrecord Violation [task-id executor-id constraint-type constraint-name])
 
 (defn add
   "To add a constraint to a pool, you have to provide its type which is `:pre` or `:post`."

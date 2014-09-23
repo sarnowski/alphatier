@@ -10,7 +10,8 @@ understanding.
 
 ## License
 
-Copyright &copy; 2014 Tobias Sarnowski &lt;tobias@sarnowski.io&gt;
+Copyright &copy; 2014 [Tobias Sarnowski](mailto:tobias@sarnowski.io),
+[Willi Schönborn](mailto:w.schoenborn@gmail.com)
 
 Permission to use, copy, modify, and distribute this software for any
 purpose with or without fee is hereby granted, provided that the above

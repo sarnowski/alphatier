@@ -1,4 +1,5 @@
 (ns io.alphatier.schedulers-test
+  (:import [clojure.lang ExceptionInfo])
   (:require [clojure.test :refer :all]
             [io.alphatier.schedulers :refer :all]
             [io.alphatier.tools :as tools]
@@ -37,7 +38,7 @@
                                             :resources {:memory 50}}]
                                    :allow-partial-commit false}))
 
-        (let [{:keys [executors tasks]} (pools/get-snapshot pool)
+        (let [{:keys [tasks]} (pools/get-snapshot pool)
               task1 (get tasks "test-task-1")
               task2 (get tasks "test-task-2")]
           (is task1)
@@ -53,7 +54,7 @@
                             :executor-id (:id executor)
                             :resources {:memory (inc (get-in executor [:resources :memory]))}}])
           (tools/fail!! "no rejection")
-          (catch clojure.lang.ExceptionInfo e
+          (catch ExceptionInfo e
             (is (ex-data e))))))
 
       )))
