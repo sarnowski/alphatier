@@ -3401,8 +3401,26 @@ the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.<
   (defn- executors-exceeding-resource-limits [pool]
     (filter #(resources-exceeded? pool %) (:executors @pool))))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(defn no-resource-overbooking [commit pre-snapshot post-snapshot]
-  ; TODO
-  [])</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.executors" name="io.alphatier.executors"><h1 class="project-name">io.alphatier.executors</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Executors</h2>
+  (let [sum (fn [resources] (reduce (partial merge-with +) resources))
+        actions (group-by :executor-id (-&gt;&gt; commit :tasks (filter (comp #(= :create %) :action))))
+        tasks (group-by :executor-id (-&gt;&gt; pre-snapshot :tasks))
+        reserved-resources (-&gt;&gt; tasks
+                                (map (fn [[k v]] [k (-&gt;&gt; v (map :resources) sum)]))
+                                (into {}))
+        executors (-&gt; pre-snapshot :executors vals)]
+    (-&gt;&gt; executors
+         (map (fn [executor]
+                (reduce (fn [result action]
+                          (let [new-resources (merge-with + (:resources action) (:resources result))
+                                free-resources (merge-with - (:resources executor) new-resources)]
+                            (if (some #(&lt; % 0) (vals free-resources))
+                              (update-in result [:rejected] conj action)
+                              (assoc result :resources new-resources))))
+                        {:resources (-&gt; executor :id reserved-resources)
+                         :rejected  []}
+                        (actions (:id executor)))))
+         (map :rejected)
+         flatten)))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.executors" name="io.alphatier.executors"><h1 class="project-name">io.alphatier.executors</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Executors</h2>
 
 <p>Executors are on the other side of schedulers. They are the workforce of Alphatier and execute whatever the
 schedulers wants them to do.</p>

@@ -57,5 +57,24 @@
     (filter #(resources-exceeded? pool %) (:executors @pool))))
 
 (defn no-resource-overbooking [commit pre-snapshot post-snapshot]
-  ; TODO
-  [])
+  (let [sum (fn [resources] (reduce (partial merge-with +) resources))
+        actions (group-by :executor-id (->> commit :tasks (filter (comp #(= :create %) :action))))
+        tasks (group-by :executor-id (->> pre-snapshot :tasks))
+        reserved-resources (->> tasks
+                                (map (fn [[k v]] [k (->> v (map :resources) sum)]))
+                                (into {}))
+        executors (-> pre-snapshot :executors vals)]
+
+    (->> executors
+         (map (fn [executor]
+                (reduce (fn [result action]
+                          (let [new-resources (merge-with + (:resources action) (:resources result))
+                                free-resources (merge-with - (:resources executor) new-resources)]
+                            (if (some #(< % 0) (vals free-resources))
+                              (update-in result [:rejected] conj action)
+                              (assoc result :resources new-resources))))
+                        {:resources (-> executor :id reserved-resources)
+                         :rejected  []}
+                        (actions (:id executor)))))
+         (map :rejected)
+         flatten)))
