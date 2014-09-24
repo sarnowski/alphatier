@@ -40,25 +40,9 @@
   ; TODO
   [])
 
-(comment "old stuff"
-  (defn- resource-exceeded?
-    "The sum of the reserved resources of one type should not be higher than the given resource of the executor."
-    [pool executor key]
-    (let [tasks (map #(get-in @pool [:tasks %]) (:task-ids executor))]
-      (> (reduce + (map #(get-in % [:resources key]) tasks))
-         (get (:resources executor) key))))
-
-  (defn- resources-exceeded?
-    "Not a single resource of an executor must be exceeded."
-    [pool executor]
-    (some #(resource-exceeded? pool executor %) (keys (:resources executor))))
-
-  (defn- executors-exceeding-resource-limits [pool]
-    (filter #(resources-exceeded? pool %) (:executors @pool))))
-
 (defn no-resource-overbooking [commit pre-snapshot post-snapshot]
   (let [sum (fn [resources] (reduce (partial merge-with +) resources))
-        actions (group-by :executor-id (->> commit :tasks (filter (comp #(= :create %) :action))))
+        actions (group-by :executor-id (->> commit :actions (filter (comp #(= :create %) :type))))
         tasks (group-by :executor-id (->> pre-snapshot :tasks))
         reserved-resources (->> tasks
                                 (map (fn [[k v]] [k (->> v (map :resources) sum)]))

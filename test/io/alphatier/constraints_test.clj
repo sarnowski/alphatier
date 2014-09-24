@@ -34,18 +34,18 @@
   (let [pool (tools/create-test-pool)
         executor (-> pool pools/get-snapshot :executors vals first)
         commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                        :tasks [{:id "my-task"
-                                                 :action :create
+                                        :actions [{:id "my-task"
+                                                 :type :create
                                                  :executor-id (:id executor)
                                                  :resources {:memory 50 :cpu 1}}]
                                         :allow-partial-commit false})
         create-commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                               :tasks [{:id "my-task-1"
-                                                        :action :create
+                                               :actions [{:id "my-task-1"
+                                                        :type :create
                                                         :executor-id (:id executor)
                                                         :resources {:memory 50 :cpu 1}},
                                                        {:id "my-task-2"
-                                                        :action :create
+                                                        :type :create
                                                         :executor-id (:id executor)
                                                         :resources {:memory 50 :cpu 1}}]
                                                :allow-partial-commit true})]
@@ -57,59 +57,59 @@
       (let [[pool _ commit _] (testies)]
         (add pool :pre :succeed (fn [_ _] []))
         (let [result (schedulers/commit pool commit)]
-          (is (:accepted-tasks result))
-          (is (every? empty? (vals (:rejected-tasks result)))))))
+          (is (:accepted-actions result))
+          (is (every? empty? (vals (:rejected-actions result)))))))
 
     (testing "executing accepting post-commit constraint"
       (let [[pool _ commit _] (testies)]
         (add pool :post :succeed (fn [_ _ _] []))
         (let [result (schedulers/commit pool commit)]
-          (is (:accepted-tasks result))
-          (is (every? empty? (vals (:rejected-tasks result)))))))
+          (is (:accepted-actions result))
+          (is (every? empty? (vals (:rejected-actions result)))))))
 
     (testing "execute rejecting pre-commit constraint"
       (let [[pool _ commit _] (testies)]
-        (add pool :pre :fail (fn [commit _] (:tasks commit)))
+        (add pool :pre :fail (fn [commit _] (:actions commit)))
         (try
           (schedulers/commit pool commit)
           (is false "Expected rejection")
           (catch ExceptionInfo e
             (let [result (ex-data e)]
               (is result)
-              (is (empty? (:accepted-tasks result)))
-              (is (:rejected-tasks result)))))))
+              (is (empty? (:accepted-actions result)))
+              (is (:rejected-actions result)))))))
 
     (testing "executing rejecting post-commit constraint"
       (let [[pool _ commit _] (testies)]
-        (add pool :post :fail (fn [commit _ _] (:tasks commit)))
+        (add pool :post :fail (fn [commit _ _] (:actions commit)))
         (try
           (schedulers/commit pool commit)
           (is false "Expected rejection")
           (catch ExceptionInfo e
             (let [result (ex-data e)]
               (is result)
-              (is (empty? (:accepted-tasks result)))
-              (is (:rejected-tasks result)))))))
+              (is (empty? (:accepted-actions result)))
+              (is (:rejected-actions result)))))))
 
       (testing "executing partially rejecting pre-commit constraint with partial commit allowed"
         (let [[pool _ _ commit] (testies)]
-          (add pool :pre :fail (fn [commit _] [(first (:tasks commit))]))
+          (add pool :pre :fail (fn [commit _] [(first (:actions commit))]))
           (let [result (schedulers/commit pool commit)]
             (is result)
-            (is (:accepted-tasks result))
-            (is (:rejected-tasks result)))))
+            (is (:accepted-actions result))
+            (is (:rejected-actions result)))))
 
       (testing "executing fully rejecting pre-commit constraints with partial commit allowed"
         (let [[pool _ _ commit] (testies)]
-          (add pool :pre :fail (fn [commit _] (:tasks commit)))
+          (add pool :pre :fail (fn [commit _] (:actions commit)))
           (try
             (schedulers/commit pool commit)
             (is false "Expected rejection")
             (catch ExceptionInfo e
               (let [result (ex-data e)]
                 (is result)
-                (is (empty? (:accepted-tasks result)))
-                (is (:rejected-tasks result)))))))
+                (is (empty? (:accepted-actions result)))
+                (is (:rejected-actions result)))))))
 
       )
 
@@ -117,16 +117,16 @@
   (testing "overbook memory"
     (let [[pool executor _ _] (testies)
           commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                          :tasks [{:id "my-task-1"
-                                                   :action :create
+                                          :actions [{:id "my-task-1"
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 50 :cpu 1}},
                                                   {:id "my-task-2"
-                                                   :action :create
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 50 :cpu 1}},
                                                   {:id "my-task-3"
-                                                   :action :create
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 1 :cpu 1}}]
                                           :allow-partial-commit false})]
@@ -135,20 +135,20 @@
         (is false "Expected rejection")
         (catch ExceptionInfo e
           (is (.contains (.getMessage e) "commit rejected"))
-          (is (-> e ex-data :rejected-tasks :no-resource-overbooking) (:tasks commit))))))
+          (is (-> e ex-data :rejected-actions :no-resource-overbooking) (:actions commit))))))
   (testing "overbook cpu"
     (let [[pool executor _ _] (testies)
           commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                          :tasks [{:id "my-task-1"
-                                                   :action :create
+                                          :actions [{:id "my-task-1"
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 25 :cpu 4}},
                                                   {:id "my-task-2"
-                                                   :action :create
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 25 :cpu 4}},
                                                   {:id "my-task-3"
-                                                   :action :create
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 25 :cpu 1}}]
                                           :allow-partial-commit false})]
@@ -157,24 +157,24 @@
         (is false "Expected rejection")
         (catch ExceptionInfo e
           (is (.contains (.getMessage e) "commit rejected"))
-          (is (-> e ex-data :rejected-tasks :no-resource-overbooking count (= 1))))))))
+          (is (-> e ex-data :rejected-actions :no-resource-overbooking count (= 1))))))))
 
 (deftest no-resource-overbooking-allow-partial-test
   (testing "overbook memory but allow"
     (let [[pool executor _ _] (testies)
           commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                          :tasks [{:id "my-task-1"
-                                                   :action :create
+                                          :actions [{:id "my-task-1"
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 50 :cpu 1}},
                                                   {:id "my-task-2"
-                                                   :action :create
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 50 :cpu 1}},
                                                   {:id "my-task-3"
-                                                   :action :create
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 1 :cpu 1}}]
                                           :allow-partial-commit true})]
       (let [result (schedulers/commit pool commit)]
-        (is (= 1 (count (-> result :rejected-tasks :no-resource-overbooking))))))))
+        (is (= 1 (count (-> result :rejected-actions :no-resource-overbooking))))))))

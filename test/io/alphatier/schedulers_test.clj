@@ -17,12 +17,12 @@
           (let [[pool executor] (testies)]
             (try
               (commit pool (map->Commit {:scheduler-id "test-scheduler"
-                                         :tasks [{:id "my-task"
-                                                  :action :create
+                                         :actions [{:id "my-task"
+                                                  :type :create
                                                   :executor-id (:id executor)
                                                   :resources {:memory 50 :cpu 1}}
                                                  {:id "my-task"
-                                                  :action :create
+                                                  :type :create
                                                   :executor-id (:id executor)
                                                   :resources {:memory 50 :cpu 1}}]
                                          :allow-partial-commit false}))
@@ -33,8 +33,8 @@
       (testing "duplicate create tasks"
         (let [[pool executor] (testies)
               create-commit (map->Commit {:scheduler-id "test-scheduler"
-                                          :tasks [{:id "my-task"
-                                                   :action :create
+                                          :actions [{:id "my-task"
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 50 :cpu 1}}]
                                           :allow-partial-commit false})]
@@ -48,8 +48,8 @@
       (testing "update for missing task"
         (let [[pool executor] (testies)
               create-commit (map->Commit {:scheduler-id "test-scheduler"
-                                          :tasks [{:id "my-task"
-                                                   :action :update
+                                          :actions [{:id "my-task"
+                                                   :type :update
                                                    :executor-id (:id executor)
                                                    :resources {:memory 50 :cpu 1}}]
                                           :allow-partial-commit false})]
@@ -62,8 +62,8 @@
       (testing "kill for missing task"
         (let [[pool executor] (testies)
               create-commit (map->Commit {:scheduler-id "test-scheduler"
-                                          :tasks [{:id "my-task"
-                                                   :action :kill
+                                          :actions [{:id "my-task"
+                                                   :type :kill
                                                    :executor-id (:id executor)
                                                    :resources {:memory 50 :cpu 1}}]
                                           :allow-partial-commit false})]
@@ -76,8 +76,8 @@
       (testing "task with missing executor"
         (let [[pool _] (testies)
               create-commit (map->Commit {:scheduler-id "test-scheduler"
-                                          :tasks [{:id "my-task"
-                                                   :action :create
+                                          :actions [{:id "my-task"
+                                                   :type :create
                                                    :executor-id "no-such-executor"
                                                    :resources {:memory 50}}]
                                           :allow-partial-commit false})]
@@ -90,8 +90,8 @@
       (testing "task with missing resources"
         (let [[pool executor] (testies)
               create-commit (map->Commit {:scheduler-id "test-scheduler"
-                                          :tasks [{:id "my-task"
-                                                   :action :create
+                                          :actions [{:id "my-task"
+                                                   :type :create
                                                    :executor-id (:id executor)
                                                    :resources {:memory 50}}]
                                           :allow-partial-commit false})]
@@ -104,8 +104,8 @@
       (testing "simple task creation"
         (let [[pool executor] (testies)]
           (commit pool (map->Commit {:scheduler-id "test-scheduler"
-                                     :tasks [{:id "my-task"
-                                              :action :create
+                                     :actions [{:id "my-task"
+                                              :type :create
                                               :executor-id (:id executor)
                                               :resources {:memory 50 :cpu 1}}]
                                      :allow-partial-commit false}))
@@ -120,12 +120,12 @@
       (testing "multiple task creation"
         (let [[pool executor] (testies)]
           (commit pool (map->Commit {:scheduler-id "test-scheduler"
-                                     :tasks [{:id "my-task-1"
-                                              :action :create
+                                     :actions [{:id "my-task-1"
+                                              :type :create
                                               :executor-id (:id executor)
                                               :resources {:memory 50 :cpu 1}}
                                              {:id "my-task-2"
-                                              :action :create
+                                              :type :create
                                               :executor-id (:id executor)
                                               :resources {:memory 50 :cpu 1}}]
                                      :allow-partial-commit false}))

@@ -64,7 +64,7 @@
         task (tools/create-test-task executor-id)]
 
     (schedulers/commit pool (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                                     :tasks [(merge {:action :create} task)]
+                                                     :actions [(merge {:type :create} task)]
                                                      :allow-partial-commit false}))
 
     (testing "lifecycle update"
