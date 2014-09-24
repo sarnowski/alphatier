@@ -112,3 +112,69 @@
                 (is (:rejected-tasks result)))))))
 
       )
+
+(deftest no-resource-overbooking-test
+  (testing "overbook memory"
+    (let [[pool executor _ _] (testies)
+          commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
+                                          :tasks [{:id "my-task-1"
+                                                   :action :create
+                                                   :executor-id (:id executor)
+                                                   :resources {:memory 50 :cpu 1}},
+                                                  {:id "my-task-2"
+                                                   :action :create
+                                                   :executor-id (:id executor)
+                                                   :resources {:memory 50 :cpu 1}},
+                                                  {:id "my-task-3"
+                                                   :action :create
+                                                   :executor-id (:id executor)
+                                                   :resources {:memory 1 :cpu 1}}]
+                                          :allow-partial-commit false})]
+      (try
+        (schedulers/commit pool commit)
+        (is false "Expected rejection")
+        (catch ExceptionInfo e
+          (is (.contains (.getMessage e) "commit rejected"))
+          (is (-> e ex-data :rejected-tasks :no-resource-overbooking) (:tasks commit))))))
+  (testing "overbook cpu"
+    (let [[pool executor _ _] (testies)
+          commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
+                                          :tasks [{:id "my-task-1"
+                                                   :action :create
+                                                   :executor-id (:id executor)
+                                                   :resources {:memory 25 :cpu 4}},
+                                                  {:id "my-task-2"
+                                                   :action :create
+                                                   :executor-id (:id executor)
+                                                   :resources {:memory 25 :cpu 4}},
+                                                  {:id "my-task-3"
+                                                   :action :create
+                                                   :executor-id (:id executor)
+                                                   :resources {:memory 25 :cpu 1}}]
+                                          :allow-partial-commit false})]
+      (try
+        (schedulers/commit pool commit)
+        (is false "Expected rejection")
+        (catch ExceptionInfo e
+          (is (.contains (.getMessage e) "commit rejected"))
+          (is (-> e ex-data :rejected-tasks :no-resource-overbooking count (= 1))))))))
+
+(deftest no-resource-overbooking-allow-partial-test
+  (testing "overbook memory but allow"
+    (let [[pool executor _ _] (testies)
+          commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
+                                          :tasks [{:id "my-task-1"
+                                                   :action :create
+                                                   :executor-id (:id executor)
+                                                   :resources {:memory 50 :cpu 1}},
+                                                  {:id "my-task-2"
+                                                   :action :create
+                                                   :executor-id (:id executor)
+                                                   :resources {:memory 50 :cpu 1}},
+                                                  {:id "my-task-3"
+                                                   :action :create
+                                                   :executor-id (:id executor)
+                                                   :resources {:memory 1 :cpu 1}}]
+                                          :allow-partial-commit true})]
+      (let [result (schedulers/commit pool commit)]
+        (is (= 1 (count (-> result :rejected-tasks :no-resource-overbooking))))))))

@@ -23,6 +23,7 @@
   (let [id-no (swap! test-executors inc)]
     (pools/map->Task {:id (str "test-task-" id-no)
                       :executor-id executor-id
+                      :scheduler-id "test-scheduler"
                       :lifecycle-phase :create
                       :resources {:memory 10
                                   :cpu 1}

@@ -41,9 +41,10 @@
 
 (defn- create-task
   "Creating a tasks registers it in the pool and assigns it to the given executor."
-  [pool task]
+  [pool scheduler-id task]
   (let [task (pools/map->Task (merge
-                                {:lifecycle-phase :create
+                                {:scheduler-id scheduler-id
+                                 :lifecycle-phase :create
                                  :metadata-version 0}
                                 task))]
     (alter pool assoc-in [:tasks (:id task)] task)
@@ -52,13 +53,13 @@
 
 (defn- update-task
   "Updating a task modifies the task's metadata."
-  [pool task]
+  [pool scheduler-id task]
   (alter pool update-in [:tasks (:id task) :metadata] merge (:metadata task))
   (alter pool update-in [:tasks (:id task) :metadata-version] inc))
 
 (defn- kill-task
 "Killing a tasks sets its lifecycle-phase to `:kill`, so that the executor can actually kill it."
-  [pool task]
+  [pool scheduler-id task]
   (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))
 
 ;; All given tasks must provide the action you want to perform in the `:action` key.
@@ -166,7 +167,7 @@ You can not issue two actions for the same task at once."
         ; Phase 2: apply the actions
         (doseq [task (->> commit :tasks (filter (complement pre-rejected-tasks)))]
           (let [action (-> task :action commit-actions)]
-            (action pool task))))
+            (action pool (:scheduler-id commit) task))))
 
       (let [post-snapshot @pool]
 

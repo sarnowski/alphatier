@@ -55,7 +55,7 @@
 ;;   that must be reserved and guaranteed for this task.
 ;; * `metadata` and `metadata-version` work exactly like the `metadata` on an executor but provided by the scheduler.
 (defrecord Task
-           [id executor-id lifecycle-phase resources metadata metadata-version])
+           [id executor-id scheduler-id lifecycle-phase resources metadata metadata-version])
 
 
 ;; ## Pool Functions
