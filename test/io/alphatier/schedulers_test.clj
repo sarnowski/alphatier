@@ -20,11 +20,11 @@
                                          :tasks [{:id "my-task"
                                                   :action :create
                                                   :executor-id (:id executor)
-                                                  :resources {:memory 50}}
+                                                  :resources {:memory 50 :cpu 1}}
                                                  {:id "my-task"
                                                   :action :create
                                                   :executor-id (:id executor)
-                                                  :resources {:memory 50}}]
+                                                  :resources {:memory 50 :cpu 1}}]
                                          :allow-partial-commit false}))
               (is false "Expected rejection")
             (catch ExceptionInfo e
@@ -36,7 +36,7 @@
                                           :tasks [{:id "my-task"
                                                    :action :create
                                                    :executor-id (:id executor)
-                                                   :resources {:memory 50}}]
+                                                   :resources {:memory 50 :cpu 1}}]
                                           :allow-partial-commit false})]
           (commit pool create-commit)
             (try
@@ -51,7 +51,7 @@
                                           :tasks [{:id "my-task"
                                                    :action :update
                                                    :executor-id (:id executor)
-                                                   :resources {:memory 50}}]
+                                                   :resources {:memory 50 :cpu 1}}]
                                           :allow-partial-commit false})]
           (try
             (commit pool create-commit)
@@ -65,7 +65,7 @@
                                           :tasks [{:id "my-task"
                                                    :action :kill
                                                    :executor-id (:id executor)
-                                                   :resources {:memory 50}}]
+                                                   :resources {:memory 50 :cpu 1}}]
                                           :allow-partial-commit false})]
           (try
             (commit pool create-commit)
@@ -73,13 +73,41 @@
           (catch ExceptionInfo e
             (is (.contains (.getMessage e) "missing task for kill"))))))
 
+      (testing "task with missing executor"
+        (let [[pool _] (testies)
+              create-commit (map->Commit {:scheduler-id "test-scheduler"
+                                          :tasks [{:id "my-task"
+                                                   :action :create
+                                                   :executor-id "no-such-executor"
+                                                   :resources {:memory 50}}]
+                                          :allow-partial-commit false})]
+          (try
+            (commit pool create-commit)
+            (is false "Expected rejection")
+          (catch ExceptionInfo e
+            (is (.contains (.getMessage e) "missing executor"))))))
+
+      (testing "task with missing resources"
+        (let [[pool executor] (testies)
+              create-commit (map->Commit {:scheduler-id "test-scheduler"
+                                          :tasks [{:id "my-task"
+                                                   :action :create
+                                                   :executor-id (:id executor)
+                                                   :resources {:memory 50}}]
+                                          :allow-partial-commit false})]
+          (try
+            (commit pool create-commit)
+            (is false "Expected rejection")
+          (catch ExceptionInfo e
+            (is (.contains (.getMessage e) "missing resource"))))))
+
       (testing "simple task creation"
         (let [[pool executor] (testies)]
           (commit pool (map->Commit {:scheduler-id "test-scheduler"
                                      :tasks [{:id "my-task"
                                               :action :create
                                               :executor-id (:id executor)
-                                              :resources {:memory 50}}]
+                                              :resources {:memory 50 :cpu 1}}]
                                      :allow-partial-commit false}))
 
           (let [{:keys [executors tasks]} (pools/get-snapshot pool)
@@ -95,11 +123,11 @@
                                      :tasks [{:id "my-task-1"
                                               :action :create
                                               :executor-id (:id executor)
-                                              :resources {:memory 50}}
+                                              :resources {:memory 50 :cpu 1}}
                                              {:id "my-task-2"
                                               :action :create
                                               :executor-id (:id executor)
-                                              :resources {:memory 50}}]
+                                              :resources {:memory 50 :cpu 1}}]
                                      :allow-partial-commit false}))
 
         (let [{:keys [tasks]} (pools/get-snapshot pool)

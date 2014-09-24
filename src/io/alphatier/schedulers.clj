@@ -124,14 +124,21 @@ You can not issue two actions for the same task at once."
           (throw (ex-info "Commit contains duplicate create tasks" {}))))
 
       (doseq [action [:update :kill]]
-        (let [tasks (->> commit :tasks (filter #(= (:action %) action)) (map :id))
+        (let [given-tasks (->> commit :tasks (filter #(= (:action %) action)) (map :id))
               existing-tasks (->> pre-snapshot :tasks (map :id))]
-          (when (and (not-empty tasks)
-                     (not (superset? existing-tasks tasks)))
+          (when (and (not-empty given-tasks)
+                     (not (superset? existing-tasks given-tasks)))
             (throw (ex-info (str "Commit contains reference to missing task for " (name action)) {})))))
 
-      ; TODO are every resource types present/given
-      ; TODO validate input - does executor id exist? etc
+      (doseq [executor-id (->> commit :tasks (map :executor-id))]
+        (when-not (contains? (-> pre-snapshot :executors) executor-id)
+          (throw (ex-info "Commit contains reference to missing executor" {})))
+        (let [executor (-> pre-snapshot :executors (get executor-id))
+              tasks (->> commit :tasks (filter (comp #(= executor-id %) :executor-id)))
+              given-resources (->> tasks (map (comp keys :resources)) flatten set)
+              existing-resources (->> executor :resources keys set)]
+          (when-not (= given-resources existing-resources)
+            (throw (ex-info "Commit contains missing resource" {})))))
 
       ; Phase 1: check pre constraints
       (when-not force

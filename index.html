@@ -3212,7 +3212,8 @@ constraints. Built-in is optimistic locking of executor or task data and protect
 <p>Isolation is provided through <a href="http://clojure.org/refs">Clojure's STM</a>. If writes happen to the state while a
 transaction runs, the transaction will be repeated with the new state.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.schedulers
-  (:require [io.alphatier.pools :as pools]))</pre></td></tr><tr><td class="docs"><h2>Commits</h2>
+  (:require [io.alphatier.pools :as pools]
+            [clojure.set :refer [intersection union superset?]]))</pre></td></tr><tr><td class="docs"><h2>Commits</h2>
 
 <p>All changes to the pool by a scheduler have to go through a commit. A scheduler can do three actions:</p>
 
@@ -3282,17 +3283,35 @@ tasks or some tasks that you want to shut down)</li>
 constraint.</p>
 
 <p>Using the <code>:force</code> flag disables all constraint checks and effectivly allows the commit to go through. This is mainly
-intended to relpay already committed commits (e.g. in an replication mode).</p>
+intended to replay already committed commits (e.g. in an replication mode).</p>
 
 <p>You can not issue two actions for the same task at once.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn commit
   [pool commit &amp; {:keys [force] :or {force false}}]
-  ; TODO check for duplicate task IDs
-  ; TODO validate input - does executor id exist? etc
-  ; TODO are every resource types present/given
+  (let [task-ids (-&gt;&gt; commit :tasks (map :id))]
+    (when (distinct? (-&gt; task-ids sort) (-&gt; task-ids set sort))
+      (throw (ex-info &quot;Commit contains duplicate tasks&quot; {}))))
   (dosync
     (let [pre-snapshot @pool
           rejections (atom {})]
+      (let [create-tasks (-&gt;&gt; commit :tasks (filter (comp (partial = :create) :action)))]
+        (when (not-empty (intersection (map :id create-tasks) (-&gt; pre-snapshot :tasks keys set)))
+          (throw (ex-info &quot;Commit contains duplicate create tasks&quot; {}))))
+      (doseq [action [:update :kill]]
+        (let [given-tasks (-&gt;&gt; commit :tasks (filter #(= (:action %) action)) (map :id))
+              existing-tasks (-&gt;&gt; pre-snapshot :tasks (map :id))]
+          (when (and (not-empty given-tasks)
+                     (not (superset? existing-tasks given-tasks)))
+            (throw (ex-info (str &quot;Commit contains reference to missing task for &quot; (name action)) {})))))
+      (doseq [executor-id (-&gt;&gt; commit :tasks (map :executor-id))]
+        (when-not (contains? (-&gt; pre-snapshot :executors) executor-id)
+          (throw (ex-info &quot;Commit contains reference to missing executor&quot; {})))
+        (let [executor (-&gt; pre-snapshot :executors (get executor-id))
+              tasks (-&gt;&gt; commit :tasks (filter (comp #(= executor-id %) :executor-id)))
+              given-resources (-&gt;&gt; tasks (map (comp keys :resources)) flatten set)
+              existing-resources (-&gt;&gt; executor :resources keys set)]
+          (when-not (= given-resources existing-resources)
+            (throw (ex-info &quot;Commit contains missing resource&quot; {})))))
       ; Phase 1: check pre constraints
       (when-not force
         (swap! rejections

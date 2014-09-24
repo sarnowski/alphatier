@@ -37,17 +37,17 @@
                                         :tasks [{:id "my-task"
                                                  :action :create
                                                  :executor-id (:id executor)
-                                                 :resources {:memory 50}}]
+                                                 :resources {:memory 50 :cpu 1}}]
                                         :allow-partial-commit false})
         create-commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
                                                :tasks [{:id "my-task-1"
                                                         :action :create
                                                         :executor-id (:id executor)
-                                                        :resources {:memory 50}},
+                                                        :resources {:memory 50 :cpu 1}},
                                                        {:id "my-task-2"
                                                         :action :create
                                                         :executor-id (:id executor)
-                                                        :resources {:memory 50}}]
+                                                        :resources {:memory 50 :cpu 1}}]
                                                :allow-partial-commit true})]
   [pool executor commit create-commit]))
 
