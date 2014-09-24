@@ -3164,7 +3164,7 @@ that must be reserved and guaranteed for this task.</li>
 <li><code>metadata</code> and <code>metadata-version</code> work exactly like the <code>metadata</code> on an executor but provided by the scheduler.</li>
 </ul>
 </td><td class="codes"><pre class="brush: clojure">(defrecord Task
-           [id executor-id lifecycle-phase resources metadata metadata-version])</pre></td></tr><tr><td class="docs"><h2>Pool Functions</h2>
+           [id executor-id scheduler-id lifecycle-phase resources metadata metadata-version])</pre></td></tr><tr><td class="docs"><h2>Pool Functions</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>A new pool keeps track of the state of the pool. Access to it should be done via the <code>get-snapshot</code> function.
    The new pool has already all built-in constraints added.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn create
@@ -3222,30 +3222,31 @@ transaction runs, the transaction will be repeated with the new state.</p>
 <li><strong>update</strong> a task's metadata in order to influence the task during runtime</li>
 <li><strong>kill</strong> a task</li>
 </ul>
-</td><td class="codes"><pre class="brush: clojure">(defrecord Commit [scheduler-id tasks allow-partial-commit])</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defrecord Result [accepted-tasks rejected-tasks pre-snapshot post-snapshot])</pre></td></tr><tr><td class="docs"><p>Creating a tasks registers it in the pool and assigns it to the given executor.</p>
+</td><td class="codes"><pre class="brush: clojure">(defrecord Commit [scheduler-id actions allow-partial-commit])</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defrecord Result [accepted-actions rejected-actions pre-snapshot post-snapshot])</pre></td></tr><tr><td class="docs"><p>Creating a tasks registers it in the pool and assigns it to the given executor.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- create-task
-  [pool task]
+  [pool scheduler-id action]
   (let [task (pools/map-&gt;Task (merge
-                                {:lifecycle-phase :create
+                                {:scheduler-id scheduler-id
+                                 :lifecycle-phase :create
                                  :metadata-version 0}
-                                task))]
+                                action))]
     (alter pool assoc-in [:tasks (:id task)] task)
     (alter pool update-in [:executors (:executor-id task) :task-ids] conj (:id task))
     (alter pool update-in [:executors (:executor-id task) :task-ids-version] inc)))</pre></td></tr><tr><td class="docs"><p>Updating a task modifies the task's metadata.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- update-task
-  [pool task]
+  [pool scheduler-id task]
   (alter pool update-in [:tasks (:id task) :metadata] merge (:metadata task))
   (alter pool update-in [:tasks (:id task) :metadata-version] inc))</pre></td></tr><tr><td class="docs"><p>Killing a tasks sets its lifecycle-phase to <code>:kill</code>, so that the executor can actually kill it.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- kill-task
-  [pool task]
+  [pool scheduler-id task]
   (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))</pre></td></tr><tr><td class="docs"><p>All given tasks must provide the action you want to perform in the <code>:action</code> key.</p>
 </td><td class="codes"><pre class="brush: clojure">(def ^:private commit-actions {:create create-task
                                :update update-task
                                :kill kill-task})</pre></td></tr><tr><td class="docs"><p>Commits will get validated upon commit. Valid commit satisfy all of the following criteria:</p>
 
 <ul>
-<li>it doesn't contain duplicate tasks, i.e. same <code>:id</code></li>
+<li>it doesn't multiple actions for the same task</li>
 <li>it doesn't contain duplicate <code>:create</code> actions for the same task</li>
 <li>it doesn't contain attempt to <code>:update</code> or <code>:kill</code> a missing task</li>
 <li>it doesn't reference a missing executor, i.e. invalid <code>:executor-id</code></li>
@@ -3253,40 +3254,40 @@ transaction runs, the transaction will be repeated with the new state.</p>
 </ul>
 </td><td class="codes"><pre class="brush: clojure">(defn- validate-commit
   [commit pre-snapshot]
-  (let [task-ids (-&gt;&gt; commit :tasks (map :id))]
+  (let [task-ids (-&gt;&gt; commit :actions (map :id))]
     (when (distinct? (-&gt; task-ids sort) (-&gt; task-ids set sort))
       (throw (ex-info &quot;Commit contains duplicate tasks&quot; {}))))
-  (let [create-tasks (-&gt;&gt; commit :tasks (filter (comp (partial = :create) :action)))]
-    (when (not-empty (intersection (map :id create-tasks) (-&gt; pre-snapshot :tasks keys set)))
+  (let [create-actions (-&gt;&gt; commit :actions (filter (comp (partial = :create) :type)))]
+    (when (not-empty (intersection (map :id create-actions) (-&gt; pre-snapshot :tasks keys set)))
       (throw (ex-info &quot;Commit contains duplicate create tasks&quot; {}))))
-  (doseq [action [:update :kill]]
-    (let [given-tasks (-&gt;&gt; commit :tasks (filter #(= (:action %) action)) (map :id))
-          existing-tasks (-&gt;&gt; pre-snapshot :tasks (map :id))]
-      (when (and (not-empty given-tasks)
-                 (not (superset? existing-tasks given-tasks)))
-        (throw (ex-info (str &quot;Commit contains reference to missing task for &quot; (name action)) {})))))
-  (doseq [executor-id (-&gt;&gt; commit :tasks (map :executor-id))]
+  (doseq [type [:update :kill]]
+    (let [given-task-ids (-&gt;&gt; commit :actions (filter #(= (:type %) type)) (map :id))
+          existing-task-ids (-&gt;&gt; pre-snapshot :tasks (map :id))]
+      (when (and (not-empty given-task-ids)
+                 (not (superset? existing-task-ids given-task-ids)))
+        (throw (ex-info (str &quot;Commit contains reference to missing task for &quot; (name type)) {})))))
+  (doseq [executor-id (-&gt;&gt; commit :actions (map :executor-id))]
     (when-not (contains? (-&gt; pre-snapshot :executors) executor-id)
       (throw (ex-info &quot;Commit contains reference to missing executor&quot; {})))
     (let [executor (-&gt; pre-snapshot :executors (get executor-id))
-          tasks (-&gt;&gt; commit :tasks (filter (comp #(= executor-id %) :executor-id)))
-          given-resources (-&gt;&gt; tasks (map (comp keys :resources)) flatten set)
+          actions (-&gt;&gt; commit :actions (filter (comp #(= executor-id %) :executor-id)))
+          given-resources (-&gt;&gt; actions (map (comp keys :resources)) flatten set)
           existing-resources (-&gt;&gt; executor :resources keys set)]
       (when-not (= given-resources existing-resources)
-        (throw (ex-info &quot;Commit contains missing resource&quot; {}))))))</pre></td></tr><tr><td class="docs"><p>Tasks may get rejected during commit by different pre/post-commit constraints.
+        (throw (ex-info &quot;Commit contains missing resource&quot; {}))))))</pre></td></tr><tr><td class="docs"><p>Actions may get rejected during commit by different pre/post-commit constraints.
 Commits are considered rejected if</p>
 
 <ul>
-<li>all of its tasks are rejected</li>
-<li>at least one of its tasks is rejected but partial commits are disabled</li>
+<li>all of its actions are rejected</li>
+<li>at least one of its actions is rejected but partial commits are disabled</li>
 </ul>
 
 <p>In all other cases the commit is accepted.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- reject-if-needed
   [commit result]
   (let [allow-partial-commit? (-&gt; commit :allow-partial-commit)
-        total (-&gt; commit :tasks count)
-        rejects (-&gt; result :rejected-tasks vals flatten count)]
+        total (-&gt; commit :actions count)
+        rejects (-&gt; result :rejected-actions vals flatten count)]
     (if (or (and allow-partial-commit? (= total rejects))
             (and (not allow-partial-commit?) (&gt; rejects 0)))
       (throw (ex-info (str &quot;commit rejected&quot;)
@@ -3310,7 +3311,7 @@ tasks or some tasks that you want to shut down)</li>
 <li>run all post-commit constraint checks</li>
 </ul>
 
-<p>Depending on the <code>:allow-partial-commit</code>, the whole commit may get rejected if one task does not get approved by a
+<p>Depending on the <code>:allow-partial-commit</code>, the whole commit may get rejected if one actions does not get approved by a
 constraint.</p>
 
 <p>Using the <code>:force</code> flag disables all constraint checks and effectivly allows the commit to go through. This is mainly
@@ -3329,15 +3330,15 @@ intended to replay already committed commits (e.g. in an replication mode).</p>
                (partial merge-with into)
                (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot)])
                              (-&gt; pre-snapshot :constraints :pre))))
-        (reject-if-needed commit {:accepted-tasks []
-                        :rejected-tasks @rejections
-                        :pre-snapshot pre-snapshot
-                        :post-snapshot nil}))
-      (let [pre-rejected-tasks (-&gt; @rejections vals flatten set)]
+        (reject-if-needed commit {:accepted-actions []
+                                  :rejected-actions @rejections
+                                  :pre-snapshot pre-snapshot
+                                  :post-snapshot nil}))
+      (let [pre-rejected-actions (-&gt; @rejections vals flatten set)]
         ; Phase 2: apply the actions
-        (doseq [task (-&gt;&gt; commit :tasks (filter (complement pre-rejected-tasks)))]
-          (let [action (-&gt; task :action commit-actions)]
-            (action pool task))))
+        (doseq [action (-&gt;&gt; commit :actions (filter (complement pre-rejected-actions)))]
+          (let [commit-action (-&gt; action :type commit-actions)]
+            (commit-action pool (:scheduler-id commit) action))))
       (let [post-snapshot @pool]
         ; Phase 3: check post constraints
         (when-not force
@@ -3345,10 +3346,10 @@ intended to replay already committed commits (e.g. in an replication mode).</p>
                  (partial merge-with into)
                  (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot post-snapshot)])
                                (-&gt; post-snapshot :constraints :post)))))
-        (let [post-rejected-tasks (-&gt; @rejections vals flatten set)
-              accepted-tasks (-&gt;&gt; commit :tasks (filter (complement post-rejected-tasks)))
-              result {:accepted-tasks accepted-tasks
-                      :rejected-tasks @rejections
+        (let [post-rejected-actions (-&gt; @rejections vals flatten set)
+              accepted-actions (-&gt;&gt; commit :actions (filter (complement post-rejected-actions)))
+              result {:accepted-actions accepted-actions
+                      :rejected-actions @rejections
                       :pre-snapshot pre-snapshot
                       :post-snapshot post-snapshot}]
           (reject-if-needed commit result)
@@ -3388,21 +3389,10 @@ the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.<
 </td><td class="codes"><pre class="brush: clojure">(defn optimistic-locking
   [commit pre-snapshot]
   ; TODO
-  [])</pre></td></tr><tr><td class="docs"><p>The sum of the reserved resources of one type should not be higher than the given resource of the executor.Not a single resource of an executor must be exceeded.</p>
-</td><td class="codes"><pre class="brush: clojure">(comment &quot;old stuff&quot;
-  (defn- resource-exceeded?
-    [pool executor key]
-    (let [tasks (map #(get-in @pool [:tasks %]) (:task-ids executor))]
-      (&gt; (reduce + (map #(get-in % [:resources key]) tasks))
-         (get (:resources executor) key))))
-  (defn- resources-exceeded?
-    [pool executor]
-    (some #(resource-exceeded? pool executor %) (keys (:resources executor))))
-  (defn- executors-exceeding-resource-limits [pool]
-    (filter #(resources-exceeded? pool %) (:executors @pool))))</pre></td></tr><tr><td class="docs">
+  [])</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(defn no-resource-overbooking [commit pre-snapshot post-snapshot]
   (let [sum (fn [resources] (reduce (partial merge-with +) resources))
-        actions (group-by :executor-id (-&gt;&gt; commit :tasks (filter (comp #(= :create %) :action))))
+        actions (group-by :executor-id (-&gt;&gt; commit :actions (filter (comp #(= :create %) :type))))
         tasks (group-by :executor-id (-&gt;&gt; pre-snapshot :tasks))
         reserved-resources (-&gt;&gt; tasks
                                 (map (fn [[k v]] [k (-&gt;&gt; v (map :resources) sum)]))
