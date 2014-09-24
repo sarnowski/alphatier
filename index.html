@@ -3242,7 +3242,38 @@ transaction runs, the transaction will be repeated with the new state.</p>
   (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))</pre></td></tr><tr><td class="docs"><p>All given tasks must provide the action you want to perform in the <code>:action</code> key.</p>
 </td><td class="codes"><pre class="brush: clojure">(def ^:private commit-actions {:create create-task
                                :update update-task
-                               :kill kill-task})</pre></td></tr><tr><td class="docs"><p>Tasks may get rejected during commit by different pre/post-commit constraints.
+                               :kill kill-task})</pre></td></tr><tr><td class="docs"><p>Commits will get validated upon commit. Valid commit satisfy all of the following criteria:</p>
+
+<ul>
+<li>it doesn't contain duplicate tasks, i.e. same <code>:id</code></li>
+<li>it doesn't contain duplicate <code>:create</code> actions for the same task</li>
+<li>it doesn't contain attempt to <code>:update</code> or <code>:kill</code> a missing task</li>
+<li>it doesn't reference a missing executor, i.e. invalid <code>:executor-id</code></li>
+<li>it <strong>does</strong> specify all resources the corresponding executor is providing</li>
+</ul>
+</td><td class="codes"><pre class="brush: clojure">(defn- validate-commit
+  [commit pre-snapshot]
+  (let [task-ids (-&gt;&gt; commit :tasks (map :id))]
+    (when (distinct? (-&gt; task-ids sort) (-&gt; task-ids set sort))
+      (throw (ex-info &quot;Commit contains duplicate tasks&quot; {}))))
+  (let [create-tasks (-&gt;&gt; commit :tasks (filter (comp (partial = :create) :action)))]
+    (when (not-empty (intersection (map :id create-tasks) (-&gt; pre-snapshot :tasks keys set)))
+      (throw (ex-info &quot;Commit contains duplicate create tasks&quot; {}))))
+  (doseq [action [:update :kill]]
+    (let [given-tasks (-&gt;&gt; commit :tasks (filter #(= (:action %) action)) (map :id))
+          existing-tasks (-&gt;&gt; pre-snapshot :tasks (map :id))]
+      (when (and (not-empty given-tasks)
+                 (not (superset? existing-tasks given-tasks)))
+        (throw (ex-info (str &quot;Commit contains reference to missing task for &quot; (name action)) {})))))
+  (doseq [executor-id (-&gt;&gt; commit :tasks (map :executor-id))]
+    (when-not (contains? (-&gt; pre-snapshot :executors) executor-id)
+      (throw (ex-info &quot;Commit contains reference to missing executor&quot; {})))
+    (let [executor (-&gt; pre-snapshot :executors (get executor-id))
+          tasks (-&gt;&gt; commit :tasks (filter (comp #(= executor-id %) :executor-id)))
+          given-resources (-&gt;&gt; tasks (map (comp keys :resources)) flatten set)
+          existing-resources (-&gt;&gt; executor :resources keys set)]
+      (when-not (= given-resources existing-resources)
+        (throw (ex-info &quot;Commit contains missing resource&quot; {}))))))</pre></td></tr><tr><td class="docs"><p>Tasks may get rejected during commit by different pre/post-commit constraints.
 Commits are considered rejected if</p>
 
 <ul>
@@ -3288,41 +3319,21 @@ intended to replay already committed commits (e.g. in an replication mode).</p>
 <p>You can not issue two actions for the same task at once.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn commit
   [pool commit &amp; {:keys [force] :or {force false}}]
-  (let [task-ids (-&gt;&gt; commit :tasks (map :id))]
-    (when (distinct? (-&gt; task-ids sort) (-&gt; task-ids set sort))
-      (throw (ex-info &quot;Commit contains duplicate tasks&quot; {}))))
   (dosync
     (let [pre-snapshot @pool
           rejections (atom {})]
-      (let [create-tasks (-&gt;&gt; commit :tasks (filter (comp (partial = :create) :action)))]
-        (when (not-empty (intersection (map :id create-tasks) (-&gt; pre-snapshot :tasks keys set)))
-          (throw (ex-info &quot;Commit contains duplicate create tasks&quot; {}))))
-      (doseq [action [:update :kill]]
-        (let [given-tasks (-&gt;&gt; commit :tasks (filter #(= (:action %) action)) (map :id))
-              existing-tasks (-&gt;&gt; pre-snapshot :tasks (map :id))]
-          (when (and (not-empty given-tasks)
-                     (not (superset? existing-tasks given-tasks)))
-            (throw (ex-info (str &quot;Commit contains reference to missing task for &quot; (name action)) {})))))
-      (doseq [executor-id (-&gt;&gt; commit :tasks (map :executor-id))]
-        (when-not (contains? (-&gt; pre-snapshot :executors) executor-id)
-          (throw (ex-info &quot;Commit contains reference to missing executor&quot; {})))
-        (let [executor (-&gt; pre-snapshot :executors (get executor-id))
-              tasks (-&gt;&gt; commit :tasks (filter (comp #(= executor-id %) :executor-id)))
-              given-resources (-&gt;&gt; tasks (map (comp keys :resources)) flatten set)
-              existing-resources (-&gt;&gt; executor :resources keys set)]
-          (when-not (= given-resources existing-resources)
-            (throw (ex-info &quot;Commit contains missing resource&quot; {})))))
+      (validate-commit commit pre-snapshot)
       ; Phase 1: check pre constraints
       (when-not force
         (swap! rejections
                (partial merge-with into)
                (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot)])
-                             (-&gt; pre-snapshot :constraints :pre)))))
-      (let [pre-rejected-tasks (-&gt; @rejections vals flatten set)]
+                             (-&gt; pre-snapshot :constraints :pre))))
         (reject-if-needed commit {:accepted-tasks []
                         :rejected-tasks @rejections
                         :pre-snapshot pre-snapshot
-                        :post-snapshot nil})
+                        :post-snapshot nil}))
+      (let [pre-rejected-tasks (-&gt; @rejections vals flatten set)]
         ; Phase 2: apply the actions
         (doseq [task (-&gt;&gt; commit :tasks (filter (complement pre-rejected-tasks)))]
           (let [action (-&gt; task :action commit-actions)]
