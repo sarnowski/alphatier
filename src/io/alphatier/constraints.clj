@@ -31,14 +31,27 @@
 
 (defn optimistic-locking
   "Every task can use optimistic locking semantic to be only applied if the state, used by the scheduler, is still the
-   current one. In order to achieve the optimistic locking, you can add the following parameters to the supplied tasks:
+   current one. In order to achieve the optimistic locking, you can add the following parameters to the supplied actions:
 
    * `:executor-metadata-version` referencing the executor's metadata version
    * `:executor-task-ids-version` referencing the executor's tasks version
-   * `:task-metadata-version` referencing the task's metadata version"
+   * `:metadata-version` referencing the task's metadata version"
   [commit pre-snapshot]
-  ; TODO
-  [])
+
+  (let [versions {:executor-metadata-version #(get-in pre-snapshot [:executors (:executor-id %) :metadata-version])
+                  :executor-task-ids-version #(get-in pre-snapshot [:executors (:executor-id %) :task-ids-version])
+                  :metadata-version #(get-in pre-snapshot [:tasks (:id %) :metadata-version])}
+        actions (->> commit :actions (filter (comp not-empty #(select-keys % (keys versions)))))]
+    (->> actions
+         (reduce
+           (fn [rejected-actions action]
+             (let [dirty? (fn [[field extractor]]
+                            (and (contains? action field)
+                                 (not= (field action) (extractor action))))]
+               (if (some dirty? versions)
+                 (conj rejected-actions action)
+                 rejected-actions)))
+           []))))
 
 (defn no-resource-overbooking [commit pre-snapshot post-snapshot]
   (let [sum (fn [resources] (reduce (partial merge-with +) resources))

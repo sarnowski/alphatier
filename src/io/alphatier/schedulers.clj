@@ -82,12 +82,12 @@
       (throw (ex-info "Commit contains duplicate tasks" {}))))
 
   (let [create-actions (->> commit :actions (filter (comp (partial = :create) :type)))]
-    (when (not-empty (intersection (map :id create-actions) (-> pre-snapshot :tasks keys set)))
+    (when (not-empty (intersection (set (map :id create-actions)) (-> pre-snapshot :tasks keys set)))
       (throw (ex-info "Commit contains duplicate create tasks" {}))))
 
   (doseq [type [:update :kill]]
-    (let [given-task-ids (->> commit :actions (filter #(= (:type %) type)) (map :id))
-          existing-task-ids (->> pre-snapshot :tasks (map :id))]
+    (let [given-task-ids (->> commit :actions (filter #(= (:type %) type)) (map :id) set)
+          existing-task-ids (->> pre-snapshot :tasks vals (map :id) set)]
       (when (and (not-empty given-task-ids)
                  (not (superset? existing-task-ids given-task-ids)))
         (throw (ex-info (str "Commit contains reference to missing task for " (name type)) {})))))

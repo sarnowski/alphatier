@@ -3258,11 +3258,11 @@ transaction runs, the transaction will be repeated with the new state.</p>
     (when (distinct? (-&gt; task-ids sort) (-&gt; task-ids set sort))
       (throw (ex-info &quot;Commit contains duplicate tasks&quot; {}))))
   (let [create-actions (-&gt;&gt; commit :actions (filter (comp (partial = :create) :type)))]
-    (when (not-empty (intersection (map :id create-actions) (-&gt; pre-snapshot :tasks keys set)))
+    (when (not-empty (intersection (set (map :id create-actions)) (-&gt; pre-snapshot :tasks keys set)))
       (throw (ex-info &quot;Commit contains duplicate create tasks&quot; {}))))
   (doseq [type [:update :kill]]
-    (let [given-task-ids (-&gt;&gt; commit :actions (filter #(= (:type %) type)) (map :id))
-          existing-task-ids (-&gt;&gt; pre-snapshot :tasks (map :id))]
+    (let [given-task-ids (-&gt;&gt; commit :actions (filter #(= (:type %) type)) (map :id) set)
+          existing-task-ids (-&gt;&gt; pre-snapshot :tasks vals (map :id) set)]
       (when (and (not-empty given-task-ids)
                  (not (superset? existing-task-ids given-task-ids)))
         (throw (ex-info (str &quot;Commit contains reference to missing task for &quot; (name type)) {})))))
@@ -3379,17 +3379,29 @@ the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.<
 
 <p>This list of built-in constraints is automatically added to all new pools.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Every task can use optimistic locking semantic to be only applied if the state, used by the scheduler, is still the
-   current one. In order to achieve the optimistic locking, you can add the following parameters to the supplied tasks:</p>
+   current one. In order to achieve the optimistic locking, you can add the following parameters to the supplied actions:</p>
 
 <ul>
 <li><code>:executor-metadata-version</code> referencing the executor's metadata version</li>
 <li><code>:executor-task-ids-version</code> referencing the executor's tasks version</li>
-<li><code>:task-metadata-version</code> referencing the task's metadata version</li>
+<li><code>:metadata-version</code> referencing the task's metadata version</li>
 </ul>
 </td><td class="codes"><pre class="brush: clojure">(defn optimistic-locking
   [commit pre-snapshot]
-  ; TODO
-  [])</pre></td></tr><tr><td class="docs">
+  (let [versions {:executor-metadata-version #(get-in pre-snapshot [:executors (:executor-id %) :metadata-version])
+                  :executor-task-ids-version #(get-in pre-snapshot [:executors (:executor-id %) :task-ids-version])
+                  :metadata-version #(get-in pre-snapshot [:tasks (:id %) :metadata-version])}
+        actions (-&gt;&gt; commit :actions (filter (comp not-empty #(select-keys % (keys versions)))))]
+    (-&gt;&gt; actions
+         (reduce
+           (fn [rejected-actions action]
+             (let [dirty? (fn [[field extractor]]
+                            (and (contains? action field)
+                                 (not= (field action) (extractor action))))]
+               (if (some dirty? versions)
+                 (conj rejected-actions action)
+                 rejected-actions)))
+           []))))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(defn no-resource-overbooking [commit pre-snapshot post-snapshot]
   (let [sum (fn [resources] (reduce (partial merge-with +) resources))
         actions (group-by :executor-id (-&gt;&gt; commit :actions (filter (comp #(= :create %) :type))))
