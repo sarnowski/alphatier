@@ -3,10 +3,8 @@
   (:require [clojure.test :refer :all]
             [io.alphatier.setup :refer :all]
             [io.alphatier.assert :refer :all]
-            [io.alphatier.tools :as tools]
             [io.alphatier.constraints :as constraints]
             [io.alphatier.executors :as executors]
-            [io.alphatier.pools :as pools]
             [io.alphatier.schedulers :as schedulers]))
 
 ;; crud

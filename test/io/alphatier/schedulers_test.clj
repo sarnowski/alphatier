@@ -1,64 +1,48 @@
 (ns io.alphatier.schedulers-test
   (:import [clojure.lang ExceptionInfo])
   (:require [clojure.test :refer :all]
-            [io.alphatier.schedulers :refer :all]
+            [io.alphatier.assert :refer :all]
+            [io.alphatier.setup :refer :all]
             [io.alphatier.tools :as tools]
-            [io.alphatier.pools :as pools]
-            [io.alphatier.executors :as executors]))
+            [io.alphatier.schedulers :as schedulers]
+            [io.alphatier.executors :as executors]
+            [io.alphatier.pools :as pools]))
 
-(defn- testies []
-  (let [pool (tools/create-test-pool)
-        executor (-> pool pools/get-snapshot :executors vals first)]
-    [pool executor]))
+(deftest commit-duplicate-actions-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" (create-actions executor-id
+                                                     :action #(create-action % :id "same-id")
+                                                     :size 2))]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "duplicate tasks"))))))
 
+(deftest commit-duplicate-create-actions-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "" [(create-action executor-id :id "same-id")])]
+    (schedulers/commit pool commit)
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "duplicate create tasks"))))))
+
+(deftest commit-action-for-unknown-task-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "" [(create-action executor-id :id "unknown-id" :type :update)])]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "missing task for update"))))))
+
+(comment ; TODO migrate
 (deftest commit-test
-
-    (testing "creation"
-        (testing "duplicate task ids"
-          (let [[pool executor] (testies)]
-            (try
-              (commit pool (map->Commit {:scheduler-id "test-scheduler"
-                                         :actions [{:id "my-task"
-                                                  :type :create
-                                                  :executor-id (:id executor)
-                                                  :resources {:memory 50 :cpu 1}}
-                                                 {:id "my-task"
-                                                  :type :create
-                                                  :executor-id (:id executor)
-                                                  :resources {:memory 50 :cpu 1}}]
-                                         :allow-partial-commit false}))
-              (is false "Expected rejection")
-            (catch ExceptionInfo e
-              (is (.contains (.getMessage e) "duplicate tasks"))))))
-
-      (testing "duplicate create tasks"
-        (let [[pool executor] (testies)
-              create-commit (map->Commit {:scheduler-id "test-scheduler"
-                                          :actions [{:id "my-task"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 50 :cpu 1}}]
-                                          :allow-partial-commit false})]
-          (commit pool create-commit)
-            (try
-              (commit pool create-commit)
-              (is false "Expected rejection")
-            (catch ExceptionInfo e
-              (is (.contains (.getMessage e) "duplicate create tasks"))))))
-
-      (testing "update for missing task"
-        (let [[pool executor] (testies)
-              create-commit (map->Commit {:scheduler-id "test-scheduler"
-                                          :actions [{:id "my-task"
-                                                   :type :update
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 50 :cpu 1}}]
-                                          :allow-partial-commit false})]
-          (try
-            (commit pool create-commit)
-            (is false "Expected rejection")
-          (catch ExceptionInfo e
-            (is (.contains (.getMessage e) "missing task for update"))))))
 
       (testing "kill for missing task"
         (let [[pool executor] (testies)
