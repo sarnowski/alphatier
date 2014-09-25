@@ -113,8 +113,8 @@ In all other cases the commit is accepted."
   [commit result]
   (let [allow-partial-commit? (-> commit :allow-partial-commit)
         total (-> commit :actions count)
-        rejects (-> result :rejected-actions vals flatten count)]
-    (if (or (and allow-partial-commit? (= total rejects))
+        rejects (-> result :rejected-actions vals flatten set count)]
+    (if (or (and allow-partial-commit? (= rejects total))
             (and (not allow-partial-commit?) (> rejects 0)))
       (throw (ex-info (str "commit rejected (total: " total " rejects: " rejects " partial: " allow-partial-commit? ")")
                       (map->Result result))))))

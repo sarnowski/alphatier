@@ -1,254 +1,193 @@
 (ns io.alphatier.constraints-test
   (:import [clojure.lang ExceptionInfo])
   (:require [clojure.test :refer :all]
-            [io.alphatier.constraints :refer :all]
+            [io.alphatier.setup :refer :all]
+            [io.alphatier.assert :refer :all]
             [io.alphatier.tools :as tools]
+            [io.alphatier.constraints :as constraints]
             [io.alphatier.executors :as executors]
             [io.alphatier.pools :as pools]
             [io.alphatier.schedulers :as schedulers]))
 
-(deftest add-test
-  (let [pool (tools/create-test-pool)]
+;; crud
 
-    (testing "adding pre constraints"
-      (add pool :pre :test (fn [_ _] nil))
-      (is (get-in @pool [:constraints :pre :test])))
+(deftest pre-constraint-add-test
+  (let [pool (default-pool)]
+    (constraints/add pool :pre :test pre-pass)
+    (is (get-in (deref pool) [:constraints :pre :test]))))
 
-    (testing "adding post constraints"
-      (add pool :post :test (fn [_ _ _] []))
-      (is (get-in @pool [:constraints :post :test])))))
+(deftest post-constraint-add-test
+  (let [pool (default-pool)]
+    (constraints/add pool :post :test post-pass)
+    (is (get-in (deref pool) [:constraints :post :test]))))
 
-(deftest del-test
-  (let [pool (tools/create-test-pool)]
+(deftest pre-constraint-del-test
+  (let [pool (default-pool)]
+    (constraints/add pool :pre :test pre-pass)
+    (constraints/del pool :pre :test)
+    (is (not (get-in (deref pool) [:constraints :pre :test])))))
 
-    (testing "adding post constraints"
-      (add pool :post :test (fn [_ _ _] []))
-      (del pool :post :test)
-      (is (not (get-in @pool [:constraints :pre :test]))))
+(deftest post-constraint-del-test
+  (let [pool (default-pool)]
+    (constraints/add pool :post :test post-pass)
+    (constraints/del pool :post :test)
+    (is (not (get-in (deref pool) [:constraints :post :test])))))
 
-    (testing "adding post constraints"
-      (add pool :post :test (fn [_ _ _] []))
-      (del pool :post :test)
-      (is (not (get-in @pool [:constraints :pre :test]))))))
+(deftest pre-constraint-pass-test
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" (create-actions executor-id :size 1))]
+    (constraints/add pool :pre :pass pre-pass)
+    (let [result (schedulers/commit pool commit)]
+      (is (:accepted-actions result))
+      (is (every? empty? (vals (:rejected-actions result)))))))
 
-(defn- testies []
-  (let [pool (tools/create-test-pool)
-        executor (-> pool pools/get-snapshot :executors vals first)
-        commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                        :actions [{:id "my-task"
-                                                 :type :create
-                                                 :executor-id (:id executor)
-                                                 :resources {:memory 50 :cpu 1}}]
-                                        :allow-partial-commit false})
-        create-commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                               :actions [{:id "my-task-1"
-                                                        :type :create
-                                                        :executor-id (:id executor)
-                                                        :resources {:memory 50 :cpu 1}},
-                                                       {:id "my-task-2"
-                                                        :type :create
-                                                        :executor-id (:id executor)
-                                                        :resources {:memory 50 :cpu 1}}]
-                                               :allow-partial-commit true})]
-  [pool executor commit create-commit]))
+;; passing constraints
 
-(deftest pre-commit-test
+(deftest post-constraint-pass-test
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" (create-actions executor-id :size 1))]
+    (constraints/add pool :post :pass post-pass)
+    (let [result (schedulers/commit pool commit)]
+      (is (:accepted-actions result))
+      (is (every? empty? (vals (:rejected-actions result)))))))
 
-    (testing "executing accepting pre-commit constraint"
-      (let [[pool _ commit _] (testies)]
-        (add pool :pre :succeed (fn [_ _] []))
-        (let [result (schedulers/commit pool commit)]
-          (is (:accepted-actions result))
-          (is (every? empty? (vals (:rejected-actions result)))))))
+(deftest pre-constraint-reject-test
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" (create-actions executor-id :size 1))]
+    (constraints/add pool :pre :reject pre-reject)
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (let [result (ex-data e)]
+          (is result)
+          (is (empty? (:accepted-actions result)))
+          (is (:rejected-actions result)))))))
 
-    (testing "executing accepting post-commit constraint"
-      (let [[pool _ commit _] (testies)]
-        (add pool :post :succeed (fn [_ _ _] []))
-        (let [result (schedulers/commit pool commit)]
-          (is (:accepted-actions result))
-          (is (every? empty? (vals (:rejected-actions result)))))))
+;; rejecting
 
-    (testing "execute rejecting pre-commit constraint"
-      (let [[pool _ commit _] (testies)]
-        (add pool :pre :fail (fn [commit _] (:actions commit)))
-        (try
-          (schedulers/commit pool commit)
-          (is false "Expected rejection")
-          (catch ExceptionInfo e
-            (let [result (ex-data e)]
-              (is result)
-              (is (empty? (:accepted-actions result)))
-              (is (:rejected-actions result)))))))
+(deftest post-constraint-reject-test
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" (create-actions executor-id :size 1))]
+    (constraints/add pool :post :reject post-reject)
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (let [result (ex-data e)]
+          (is result)
+          (is (empty? (:accepted-actions result)))
+          (is (:rejected-actions result)))))))
 
-    (testing "executing rejecting post-commit constraint"
-      (let [[pool _ commit _] (testies)]
-        (add pool :post :fail (fn [commit _ _] (:actions commit)))
-        (try
-          (schedulers/commit pool commit)
-          (is false "Expected rejection")
-          (catch ExceptionInfo e
-            (let [result (ex-data e)]
-              (is result)
-              (is (empty? (:accepted-actions result)))
-              (is (:rejected-actions result)))))))
+(deftest pre-constraint-partial-reject-test
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" (create-actions executor-id :size 2) :allow-partial-commit true)]
+    (constraints/add pool :pre :reject-first (pre-reject-only first))
+    (let [result (schedulers/commit pool commit)]
+      (is result)
+      (is (:accepted-actions result))
+      (is (= 1 (count (-> result :rejected-actions :reject-first vals)))))))
 
-      (testing "executing partially rejecting pre-commit constraint with partial commit allowed"
-        (let [[pool _ _ commit] (testies)]
-          (add pool :pre :fail (fn [commit _] [(first (:actions commit))]))
-          (let [result (schedulers/commit pool commit)]
-            (is result)
-            (is (:accepted-actions result))
-            (is (:rejected-actions result)))))
+(deftest post-constraint-partial-reject-test
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" (create-actions executor-id :size 2) :allow-partial-commit true)]
+    (constraints/add pool :post :reject-first (post-reject-only first))
+    (let [result (schedulers/commit pool commit)]
+      (is result)
+      (is (:accepted-actions result))
+      (is (= 1 (count (-> result :rejected-actions :reject-first vals)))))))
 
-      (testing "executing fully rejecting pre-commit constraints with partial commit allowed"
-        (let [[pool _ _ commit] (testies)]
-          (add pool :pre :fail (fn [commit _] (:actions commit)))
-          (try
-            (schedulers/commit pool commit)
-            (is false "Expected rejection")
-            (catch ExceptionInfo e
-              (let [result (ex-data e)]
-                (is result)
-                (is (empty? (:accepted-actions result)))
-                (is (:rejected-actions result)))))))
+(deftest pre-constraint-partial-reject-full-test
+  "Verifies that a full-rejection even if :allow-partial-commit results in an exception"
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" (create-actions executor-id :size 2) :allow-partial-commit true)]
+    (constraints/add pool :pre :reject pre-reject)
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (let [result (ex-data e)]
+          (is result)
+          (is (empty? (:accepted-actions result)))
+          (is (:rejected-actions result)))))))
 
-      )
+(deftest post-constraint-partial-reject-full-test
+  "Verifies that a full-rejection even if :allow-partial-commit results in an exception"
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" (create-actions executor-id :size 2) :allow-partial-commit true)]
+    (constraints/add pool :post :reject post-reject)
+    (try
+      (println (:accepted-actions (schedulers/commit pool commit)))
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (let [result (ex-data e)]
+          (is result)
+          (is (empty? (:accepted-actions result)))
+          (is (:rejected-actions result)))))))
+
+;; specific constraints
 
 (deftest no-resource-overbooking-test
-  (testing "overbook memory"
-    (let [[pool executor _ _] (testies)
-          commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                          :actions [{:id "my-task-1"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 50 :cpu 1}},
-                                                  {:id "my-task-2"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 50 :cpu 1}},
-                                                  {:id "my-task-3"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 1 :cpu 1}}]
-                                          :allow-partial-commit false})]
-      (try
-        (schedulers/commit pool commit)
-        (is false "Expected rejection")
-        (catch ExceptionInfo e
-          (is (.contains (.getMessage e) "commit rejected"))
-          (is (-> e ex-data :rejected-actions :no-resource-overbooking) (:actions commit))))))
-  (testing "overbook cpu"
-    (let [[pool executor _ _] (testies)
-          commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                          :actions [{:id "my-task-1"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 25 :cpu 4}},
-                                                  {:id "my-task-2"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 25 :cpu 4}},
-                                                  {:id "my-task-3"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 25 :cpu 1}}]
-                                          :allow-partial-commit false})]
-      (try
-        (schedulers/commit pool commit)
-        (is false "Expected rejection")
-        (catch ExceptionInfo e
-          (is (.contains (.getMessage e) "commit rejected"))
-          (is (-> e ex-data :rejected-actions :no-resource-overbooking count (= 1))))))))
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        commit (overbooking-commit "test" executor-id)]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "commit rejected"))
+        (is (-> e ex-data :rejected-actions :no-resource-overbooking) (:actions commit))))))
 
-(deftest no-resource-overbooking-allow-partial-test
-  (testing "overbook memory but allow"
-    (let [[pool executor _ _] (testies)
-          commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                          :actions [{:id "my-task-1"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 50 :cpu 1}},
-                                                  {:id "my-task-2"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 50 :cpu 1}},
-                                                  {:id "my-task-3"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 1 :cpu 1}}]
-                                          :allow-partial-commit true})]
-      (let [result (schedulers/commit pool commit)]
-        (is (= 1 (count (-> result :rejected-actions :no-resource-overbooking))))))))
+(deftest no-resource-overbooking-partial-test
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        commit (overbooking-commit "test" executor-id :allow-partial-commit true)]
+    (let [result (schedulers/commit pool commit)]
+      (is (= 2 (count (-> result :rejected-actions :no-resource-overbooking)))))))
 
-(deftest optimistic-locking-test
-  (testing "executor metadata-version"
-    (let [[pool executor _ _] (testies)
-          commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                          :actions [{:id "my-task-1"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :executor-metadata-version 0
-                                                   :resources {:memory 50 :cpu 1}}]
-                                          :allow-partial-commit false})]
-      (executors/update pool (:id executor) {:foo "bar"})
-      (try
-        (schedulers/commit pool commit)
-        (is false "Expected rejection")
-        (catch ExceptionInfo e
-          (is (.contains (.getMessage e) "commit rejected"))
-          (is (-> e ex-data :rejected-actions :optimistic-locking count (= 1)))))))
+(deftest optimistic-locking-executor-metadata-test
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :executor-metadata-version 0)])]
+    (executors/update pool executor-id {:foo "bar"})
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "commit rejected"))
+        (is (-> e ex-data :rejected-actions :optimistic-locking count (= 1)))))))
 
-  (testing "executor task-ids-version"
-    (let [[pool executor _ _] (testies)
-          commit-1 (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                            :actions [{:id "my-task-1"
-                                                     :type :create
-                                                     :executor-id (:id executor)
-                                                     :resources {:memory 50 :cpu 1}}]
-                                            :allow-partial-commit false})
-          commit-2 (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                            :actions [{:id "my-task-2"
-                                                     :type :create
-                                                     :executor-id (:id executor)
-                                                     :executor-task-ids-version 0
-                                                     :resources {:memory 50 :cpu 1}}]
-                                            :allow-partial-commit false})]
-      (schedulers/commit pool commit-1)
-      (try
-        (schedulers/commit pool commit-2)
-        (is false "Expected rejection")
-        (catch ExceptionInfo e
-          (is (.contains (.getMessage e) "commit rejected"))
-          (is (-> e ex-data :rejected-actions :optimistic-locking count (= 1)))))))
+(deftest optimistic-locking-executor-task-ids-test
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :executor-task-ids-version 0)])]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "commit rejected"))
+        (is (-> e ex-data :rejected-actions :optimistic-locking count (= 1)))))))
 
-  (testing "task metadata-version"
-    (let [[pool executor _ _] (testies)
-          create-commit (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                                 :actions [{:id "my-task-1"
-                                                          :type :create
-                                                          :executor-id (:id executor)
-                                                          :resources {:memory 10 :cpu 1}}]
-                                                 :allow-partial-commit false})
-          update-commit-1 (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                                   :actions [{:id "my-task-1"
-                                                            :type :update
-                                                            :executor-id (:id executor)
-                                                            :metadata {:foo "foo"}
-                                                            :resources {:memory 10 :cpu 1}}]
-                                                   :allow-partial-commit false})
-          update-commit-2 (schedulers/map->Commit {:scheduler-id "test-scheduler"
-                                                   :actions [{:id "my-task-1"
-                                                            :type :update
-                                                            :executor-id (:id executor)
-                                                            :metadata-version 0
-                                                            :metadata {:foo "bar"}
-                                                            :resources {:memory 10 :cpu 1}}]
-                                                   :allow-partial-commit false})]
-      (schedulers/commit pool create-commit)
-      (schedulers/commit pool update-commit-1)
-      (try
-        (schedulers/commit pool update-commit-2)
-        (is false "Expected rejection")
-        (catch ExceptionInfo e
-          (is (.contains (.getMessage e) "commit rejected"))
-          (is (-> e ex-data :rejected-actions :optimistic-locking count (= 1))))))))
+(deftest optimistic-locking-task-metadata-test
+  (let [pool (default-pool)
+        executor-id (executor-id-of pool first)
+        task-id (gen-task-id)
+        create (create-commit "test" [(create-action executor-id :id task-id)])
+        update (create-commit "test" [(create-action executor-id :id task-id :type :update :metadata {:foo "bar"})])
+        commit (create-commit "test" [(create-action executor-id :id task-id :type :update :metadata-version 0)])]
+    (schedulers/commit pool create)
+    (schedulers/commit pool update)
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "commit rejected"))
+        (is (-> e ex-data :rejected-actions :optimistic-locking count (= 1)))))))

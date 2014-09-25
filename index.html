@@ -3142,8 +3142,8 @@ Commits are considered rejected if</p>
   [commit result]
   (let [allow-partial-commit? (-&gt; commit :allow-partial-commit)
         total (-&gt; commit :actions count)
-        rejects (-&gt; result :rejected-actions vals flatten count)]
-    (if (or (and allow-partial-commit? (= total rejects))
+        rejects (-&gt; result :rejected-actions vals flatten set count)]
+    (if (or (and allow-partial-commit? (= rejects total))
             (and (not allow-partial-commit?) (&gt; rejects 0)))
       (throw (ex-info (str &quot;commit rejected (total: &quot; total &quot; rejects: &quot; rejects &quot; partial: &quot; allow-partial-commit? &quot;)&quot;)
                       (map-&gt;Result result))))))</pre></td></tr><tr><td class="docs"><h3>How to implement a scheduler?</h3>
@@ -3259,8 +3259,8 @@ the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.<
            []))))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(defn no-resource-overbooking [commit pre-snapshot post-snapshot]
   (let [sum (fn [resources] (reduce (partial merge-with +) resources))
-        actions (group-by :executor-id (-&gt;&gt; commit :actions (filter (comp #(= :create %) :type))))
-        tasks (group-by :executor-id (-&gt;&gt; pre-snapshot :tasks))
+        actions (-&gt;&gt; commit :actions (filter (comp #{:create} :type)) (group-by :executor-id))
+        tasks (-&gt;&gt; pre-snapshot :tasks vals (group-by :executor-id))
         reserved-resources (-&gt;&gt; tasks
                                 (map (fn [[k v]] [k (-&gt;&gt; v (map :resources) sum)]))
                                 (into {}))
