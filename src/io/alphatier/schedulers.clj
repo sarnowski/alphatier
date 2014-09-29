@@ -92,9 +92,9 @@
                  (not (superset? existing-task-ids given-task-ids)))
         (throw (ex-info (str "Commit contains reference to missing task for " (name type)) {})))))
 
-  (doseq [executor-id (->> commit :actions (map :executor-id))]
+  (doseq [executor-id (->> commit :actions (filter (comp (partial = :create) :type)) (map :executor-id))]
     (when-not (contains? (-> pre-snapshot :executors) executor-id)
-      (throw (ex-info "Commit contains reference to missing executor" {})))
+      (throw (ex-info (str "Commit contains reference to missing executor " executor-id) {})))
     (let [executor (-> pre-snapshot :executors (get executor-id))
           actions (->> commit :actions (filter (comp #(= executor-id %) :executor-id)))
           given-resources (->> actions (map (comp keys :resources)) flatten set)
@@ -116,7 +116,7 @@ In all other cases the commit is accepted."
         rejects (-> result :rejected-actions vals flatten count)]
     (if (or (and allow-partial-commit? (= total rejects))
             (and (not allow-partial-commit?) (> rejects 0)))
-      (throw (ex-info (str "commit rejected")
+      (throw (ex-info (str "commit rejected (total: " total " rejects: " rejects " partial: " allow-partial-commit? ")")
                       (map->Result result))))))
 
 ;; ### How to implement a scheduler?

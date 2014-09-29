@@ -3,7 +3,8 @@
   (:require [clojure.test :refer :all]
             [io.alphatier.schedulers :refer :all]
             [io.alphatier.tools :as tools]
-            [io.alphatier.pools :as pools]))
+            [io.alphatier.pools :as pools]
+            [io.alphatier.executors :as executors]))
 
 (defn- testies []
   (let [pool (tools/create-test-pool)
@@ -137,5 +138,51 @@
           (is task2)
           (is (= "my-task-1") (:id task1))
           (is (= "my-task-2") (:id task2)))))
+
+      (comment "TODO currently not working"
+
+      (testing "multiple actions"
+        (let [pool (pools/create)]
+          (executors/register pool "test-executor"
+                              {"disk" 128
+                               "memory" 512
+                               "cpu" 9}
+                              :metadata-version 4
+                              :tasks [(pools/map->Task {:id "test-task-1"
+                                                        :executor-id "test-executor"
+                                                        :scheduler-id "test-scheduler"
+                                                        :lifecycle-phase :created
+                                                        :resources {"disk" 10
+                                                                    "memory" 70
+                                                                    "cpu" 1}
+                                                        :metadata {"work" "maybe"}
+                                                        :metadata-version 1})
+                                      (pools/map->Task {:id "test-task-2"
+                                                        :executor-id "test-executor"
+                                                        :scheduler-id "test-scheduler"
+                                                        :lifecycle-phase :created
+                                                        :resources {"disk" 10
+                                                                    "memory" 70
+                                                                    "cpu" 1}
+                                                        :metadata {"work" "maybe"}
+                                                        :metadata-version 1})]
+                              :task-ids-version 7)
+          (commit pool (map->Commit {:scheduler-id "test-scheduler"
+                                     :actions [{:id "test-task-3"
+                                                :action :create
+                                                :executor-id "test-executor"
+                                                :metadata {"work" "probably"}
+                                                :resources {"disk" 10
+                                                            "memory" 100
+                                                            "cpu" 2}
+                                                :metadata-version 1
+                                                :executor-metadata-version 4
+                                                :executor-task-ids-version 7}
+                                               {:id "test-task-1"
+                                                :action :update
+                                                :metadata {"work" "definitely"}}
+                                               {:id "test-task-2"
+                                                :action :kill}]
+                                     :allow-partial-commit false})))))
 
       ))
