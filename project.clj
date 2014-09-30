@@ -78,5 +78,7 @@ If you like to change this library, please have a look at the [README](README.md
                    "src/io/alphatier/constraints.clj"
                    "src/io/alphatier/executors.clj"]}
 
+  :signing {:gpg-key "tobias@sarnowski.io"}
+
   :deploy-repositories {"releases" {:url "https://oss.sonatype.org/service/local/staging/deploy/maven2/" :creds :gpg}
                         "snapshots" {:url "https://oss.sonatype.org/content/repositories/snapshots/" :creds :gpg}})
