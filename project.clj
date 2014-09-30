@@ -36,6 +36,15 @@ The library is written in [Clojure](http://clojure.org/) and  is available in th
         <version>0.1.0</version>
     </dependency>
 
+The library is written in pure Clojure without [ahead-of-time compilation](http://clojure.org/compilation).
+This means, that the library does not contain any *.class files. If you work with
+Clojure, this is not a problem but if you like to use the library from another
+JVM language (like Java, Scala or Groovy), you can use
+[Clojure's built-in tools](http://clojure.org/java_interop#Java%20Interop-Calling%20Clojure%20From%20Java)
+for interoperability or try our Java library:
+
+[https://github.com/sarnowski/alphatier-java](https://github.com/sarnowski/alphatier-java)
+
 ### Development
 
 If you like to change this library, please have a look at the [README](README.md). Development is done via
