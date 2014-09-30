@@ -76,7 +76,7 @@ If you like to change this library, please have a look at the [README](README.md
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/core.incubator "0.1.3"]]
 
-  :plugins [[lein-marginalia "0.7.1"]]
+  :plugins [[lein-marginalia "0.8.0"]]
   :aliases {"doc" ["marg"
                    "-n" "Alphatier"
                    "-d" "."

@@ -3,7 +3,6 @@
 ;; Executors are on the other side of schedulers. They are the workforce of Alphatier and execute whatever the
 ;; schedulers wants them to do.
 (ns io.alphatier.executors
-  (:import [clojure.lang IFn])
   (:require [clojure.core.incubator :as clojure-incubator]
             [io.alphatier.pools :as core]))
 
