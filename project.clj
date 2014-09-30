@@ -1,4 +1,4 @@
-(defproject io.alphatier/alphatier "0.1-SNAPSHOT"
+(defproject io.alphatier/alphatier "0.1.0-SNAPSHOT"
 
   :description "
 Alphatier is a resource management library. It is designed to allow different
