@@ -48,6 +48,22 @@ If you like to change this library, please have a look at the [README](README.md
             :url "http://opensource.org/licenses/ISC"
             :distribution :repo}
 
+  :scm {:url "git@github.com:sarnowski/alphatier.git"}
+
+  :pom-addition [:developers
+                 [:developer
+                  [:name "Tobias Sarnowski"]
+                  [:url "http://www.sarnowski.io"]
+                  [:email "tobias@sarnowski.io"]
+                  [:timezone "+1"]]
+                 [:developer
+                  [:name "Willi Schönborn"]
+                  [:url "http://codereligion.com/"]
+                  [:email "w.schoenborn@gmail.com"]
+                  [:timezone "+1"]]]
+
+  :min-lein-version "2.0.0"
+
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/core.incubator "0.1.3"]]
 
@@ -60,4 +76,7 @@ If you like to change this library, please have a look at the [README](README.md
                    "src/io/alphatier/pools.clj"
                    "src/io/alphatier/schedulers.clj"
                    "src/io/alphatier/constraints.clj"
-                   "src/io/alphatier/executors.clj"]})
+                   "src/io/alphatier/executors.clj"]}
+
+  :deploy-repositories {"releases" {:url "https://oss.sonatype.org/service/local/staging/deploy/maven2/" :creds :gpg}
+                        "snapshots" {:url "https://oss.sonatype.org/content/repositories/snapshots/" :creds :gpg}})
