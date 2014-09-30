@@ -76,7 +76,9 @@ If you like to change this library, please have a look at the [README](README.md
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/core.incubator "0.1.3"]]
 
-  :plugins [[lein-marginalia "0.8.0"]]
+  :plugins [[lein-marginalia "0.8.0"]
+            [lein-pprint "1.1.1"]]
+
   :aliases {"doc" ["marg"
                    "-n" "Alphatier"
                    "-d" "."
@@ -86,6 +88,16 @@ If you like to change this library, please have a look at the [README](README.md
                    "src/io/alphatier/schedulers.clj"
                    "src/io/alphatier/constraints.clj"
                    "src/io/alphatier/executors.clj"]}
+
+  :release-tasks [["vcs" "assert-committed"]
+                  ["change" "version" "leiningen.release/bump-version" "release"]
+                  ["doc"]  ; generate documentation TODO: set version in maven dependency documentation in :description
+                  ["vcs" "commit"]
+                  ["vcs" "tag"]
+                  ["deploy"]
+                  ["change" "version" "leiningen.release/bump-version"]
+                  ["vcs" "commit"]
+                  ["vcs" "push"]]
 
   :signing {:gpg-key "tobias@sarnowski.io"}
 
