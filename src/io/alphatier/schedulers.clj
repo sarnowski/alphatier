@@ -83,7 +83,10 @@
 
   (let [create-actions (->> commit :actions (filter (comp (partial = :create) :type)))]
     (when (not-empty (intersection (set (map :id create-actions)) (-> pre-snapshot :tasks keys set)))
-      (throw (ex-info "Commit contains duplicate create tasks" {}))))
+      (throw (ex-info "Commit contains duplicate create tasks" {})))
+    (when (not-empty (intersection (-> (map keys create-actions) flatten set)
+                                   #{:scheduler-id :lifecycle-phase :metadata-version}))
+      (throw (ex-info "Commit contains illegal properties in create actions" {}))))
 
   (doseq [type [:update :kill]]
     (let [given-task-ids (->> commit :actions (filter #(= (:type %) type)) (map :id) set)

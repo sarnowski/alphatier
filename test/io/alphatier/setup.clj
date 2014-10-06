@@ -116,11 +116,8 @@
 
 ;; constraints
 
-(defn pre-pass [_ _]
-  [])
-
-(defn post-pass [_ _ _]
-  [])
+(def pre-pass (constantly []))
+(def post-pass (constantly []))
 
 (defn pre-reject [commit _]
   (:actions commit))

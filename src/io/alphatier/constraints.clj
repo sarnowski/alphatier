@@ -41,7 +41,9 @@
   (let [versions {:executor-metadata-version #(get-in pre-snapshot [:executors (:executor-id %) :metadata-version])
                   :executor-task-ids-version #(get-in pre-snapshot [:executors (:executor-id %) :task-ids-version])
                   :metadata-version #(get-in pre-snapshot [:tasks (:id %) :metadata-version])}
-        actions (->> commit :actions (filter (comp not-empty #(select-keys % (keys versions)))))]
+        actions (->> commit
+                     :actions
+                     (filter (comp not-empty #(select-keys % (keys versions)))))]
     (->> actions
          (reduce
            (fn [rejected-actions action]

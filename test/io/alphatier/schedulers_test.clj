@@ -23,7 +23,7 @@
 (deftest commit-duplicate-create-actions-should-fail
   (let [pool (empty-pool)
         executor-id (executor-id-of pool first)
-        commit (create-commit "" [(create-action executor-id :id "same-id")])]
+        commit (create-commit "test" [(create-action executor-id :id "same-id")])]
     (schedulers/commit pool commit)
     (try
       (schedulers/commit pool commit)
@@ -34,12 +34,42 @@
 (deftest commit-action-for-unknown-task-should-fail
   (let [pool (empty-pool)
         executor-id (executor-id-of pool first)
-        commit (create-commit "" [(create-action executor-id :id "unknown-id" :type :update)])]
+        commit (create-commit "test" [(create-action executor-id :id "unknown-id" :type :update)])]
     (try
       (schedulers/commit pool commit)
       (fail "Expected rejection")
       (catch ExceptionInfo e
         (is (.contains (.getMessage e) "missing task for update"))))))
+
+(deftest create-action-with-scheduler-id-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :scheduler-id "foo")])]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "illegal properties in create actions"))))))
+
+(deftest create-action-with-lifecycle-phase-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :lifecycle-phase :created)])]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "illegal properties in create actions"))))))
+
+(deftest create-action-with-metadata-version-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :metadata-version 1)])]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "illegal properties in create actions"))))))
 
 (comment ; TODO migrate
 (deftest commit-test
@@ -122,51 +152,5 @@
           (is task2)
           (is (= "my-task-1") (:id task1))
           (is (= "my-task-2") (:id task2)))))
-
-      (comment "TODO currently not working"
-
-      (testing "multiple actions"
-        (let [pool (pools/create)]
-          (executors/register pool "test-executor"
-                              {"disk" 128
-                               "memory" 512
-                               "cpu" 9}
-                              :metadata-version 4
-                              :tasks [(pools/map->Task {:id "test-task-1"
-                                                        :executor-id "test-executor"
-                                                        :scheduler-id "test-scheduler"
-                                                        :lifecycle-phase :created
-                                                        :resources {"disk" 10
-                                                                    "memory" 70
-                                                                    "cpu" 1}
-                                                        :metadata {"work" "maybe"}
-                                                        :metadata-version 1})
-                                      (pools/map->Task {:id "test-task-2"
-                                                        :executor-id "test-executor"
-                                                        :scheduler-id "test-scheduler"
-                                                        :lifecycle-phase :created
-                                                        :resources {"disk" 10
-                                                                    "memory" 70
-                                                                    "cpu" 1}
-                                                        :metadata {"work" "maybe"}
-                                                        :metadata-version 1})]
-                              :task-ids-version 7)
-          (commit pool (map->Commit {:scheduler-id "test-scheduler"
-                                     :actions [{:id "test-task-3"
-                                                :action :create
-                                                :executor-id "test-executor"
-                                                :metadata {"work" "probably"}
-                                                :resources {"disk" 10
-                                                            "memory" 100
-                                                            "cpu" 2}
-                                                :metadata-version 1
-                                                :executor-metadata-version 4
-                                                :executor-task-ids-version 7}
-                                               {:id "test-task-1"
-                                                :action :update
-                                                :metadata {"work" "definitely"}}
-                                               {:id "test-task-2"
-                                                :action :kill}]
-                                     :allow-partial-commit false})))))
 
       ))
