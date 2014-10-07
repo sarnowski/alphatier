@@ -41,7 +41,9 @@
   (let [versions {:executor-metadata-version #(get-in pre-snapshot [:executors (:executor-id %) :metadata-version])
                   :executor-task-ids-version #(get-in pre-snapshot [:executors (:executor-id %) :task-ids-version])
                   :metadata-version #(get-in pre-snapshot [:tasks (:id %) :metadata-version])}
-        actions (->> commit :actions (filter (comp not-empty #(select-keys % (keys versions)))))]
+        actions (->> commit
+                     :actions
+                     (filter (comp not-empty #(select-keys % (keys versions)))))]
     (->> actions
          (reduce
            (fn [rejected-actions action]
@@ -55,8 +57,8 @@
 
 (defn no-resource-overbooking [commit pre-snapshot post-snapshot]
   (let [sum (fn [resources] (reduce (partial merge-with +) resources))
-        actions (group-by :executor-id (->> commit :actions (filter (comp #(= :create %) :type))))
-        tasks (group-by :executor-id (->> pre-snapshot :tasks))
+        actions (->> commit :actions (filter (comp #{:create} :type)) (group-by :executor-id))
+        tasks (->> pre-snapshot :tasks vals (group-by :executor-id))
         reserved-resources (->> tasks
                                 (map (fn [[k v]] [k (->> v (map :resources) sum)]))
                                 (into {}))

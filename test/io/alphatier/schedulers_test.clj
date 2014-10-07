@@ -1,64 +1,78 @@
 (ns io.alphatier.schedulers-test
   (:import [clojure.lang ExceptionInfo])
   (:require [clojure.test :refer :all]
-            [io.alphatier.schedulers :refer :all]
+            [io.alphatier.assert :refer :all]
+            [io.alphatier.setup :refer :all]
             [io.alphatier.tools :as tools]
-            [io.alphatier.pools :as pools]
-            [io.alphatier.executors :as executors]))
+            [io.alphatier.schedulers :as schedulers]
+            [io.alphatier.executors :as executors]
+            [io.alphatier.pools :as pools]))
 
-(defn- testies []
-  (let [pool (tools/create-test-pool)
-        executor (-> pool pools/get-snapshot :executors vals first)]
-    [pool executor]))
+(deftest commit-duplicate-actions-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" (create-actions executor-id
+                                                     :action #(create-action % :id "same-id")
+                                                     :size 2))]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "duplicate tasks"))))))
 
+(deftest commit-duplicate-create-actions-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :id "same-id")])]
+    (schedulers/commit pool commit)
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "duplicate create tasks"))))))
+
+(deftest commit-action-for-unknown-task-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :id "unknown-id" :type :update)])]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "missing task for update"))))))
+
+(deftest create-action-with-scheduler-id-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :scheduler-id "foo")])]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "illegal properties in create actions"))))))
+
+(deftest create-action-with-lifecycle-phase-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :lifecycle-phase :created)])]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "illegal properties in create actions"))))))
+
+(deftest create-action-with-metadata-version-should-fail
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :metadata-version 1)])]
+    (try
+      (schedulers/commit pool commit)
+      (fail "Expected rejection")
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "illegal properties in create actions"))))))
+
+(comment ; TODO migrate
 (deftest commit-test
-
-    (testing "creation"
-        (testing "duplicate task ids"
-          (let [[pool executor] (testies)]
-            (try
-              (commit pool (map->Commit {:scheduler-id "test-scheduler"
-                                         :actions [{:id "my-task"
-                                                  :type :create
-                                                  :executor-id (:id executor)
-                                                  :resources {:memory 50 :cpu 1}}
-                                                 {:id "my-task"
-                                                  :type :create
-                                                  :executor-id (:id executor)
-                                                  :resources {:memory 50 :cpu 1}}]
-                                         :allow-partial-commit false}))
-              (is false "Expected rejection")
-            (catch ExceptionInfo e
-              (is (.contains (.getMessage e) "duplicate tasks"))))))
-
-      (testing "duplicate create tasks"
-        (let [[pool executor] (testies)
-              create-commit (map->Commit {:scheduler-id "test-scheduler"
-                                          :actions [{:id "my-task"
-                                                   :type :create
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 50 :cpu 1}}]
-                                          :allow-partial-commit false})]
-          (commit pool create-commit)
-            (try
-              (commit pool create-commit)
-              (is false "Expected rejection")
-            (catch ExceptionInfo e
-              (is (.contains (.getMessage e) "duplicate create tasks"))))))
-
-      (testing "update for missing task"
-        (let [[pool executor] (testies)
-              create-commit (map->Commit {:scheduler-id "test-scheduler"
-                                          :actions [{:id "my-task"
-                                                   :type :update
-                                                   :executor-id (:id executor)
-                                                   :resources {:memory 50 :cpu 1}}]
-                                          :allow-partial-commit false})]
-          (try
-            (commit pool create-commit)
-            (is false "Expected rejection")
-          (catch ExceptionInfo e
-            (is (.contains (.getMessage e) "missing task for update"))))))
 
       (testing "kill for missing task"
         (let [[pool executor] (testies)
@@ -138,51 +152,5 @@
           (is task2)
           (is (= "my-task-1") (:id task1))
           (is (= "my-task-2") (:id task2)))))
-
-      (comment "TODO currently not working"
-
-      (testing "multiple actions"
-        (let [pool (pools/create)]
-          (executors/register pool "test-executor"
-                              {"disk" 128
-                               "memory" 512
-                               "cpu" 9}
-                              :metadata-version 4
-                              :tasks [(pools/map->Task {:id "test-task-1"
-                                                        :executor-id "test-executor"
-                                                        :scheduler-id "test-scheduler"
-                                                        :lifecycle-phase :created
-                                                        :resources {"disk" 10
-                                                                    "memory" 70
-                                                                    "cpu" 1}
-                                                        :metadata {"work" "maybe"}
-                                                        :metadata-version 1})
-                                      (pools/map->Task {:id "test-task-2"
-                                                        :executor-id "test-executor"
-                                                        :scheduler-id "test-scheduler"
-                                                        :lifecycle-phase :created
-                                                        :resources {"disk" 10
-                                                                    "memory" 70
-                                                                    "cpu" 1}
-                                                        :metadata {"work" "maybe"}
-                                                        :metadata-version 1})]
-                              :task-ids-version 7)
-          (commit pool (map->Commit {:scheduler-id "test-scheduler"
-                                     :actions [{:id "test-task-3"
-                                                :action :create
-                                                :executor-id "test-executor"
-                                                :metadata {"work" "probably"}
-                                                :resources {"disk" 10
-                                                            "memory" 100
-                                                            "cpu" 2}
-                                                :metadata-version 1
-                                                :executor-metadata-version 4
-                                                :executor-task-ids-version 7}
-                                               {:id "test-task-1"
-                                                :action :update
-                                                :metadata {"work" "definitely"}}
-                                               {:id "test-task-2"
-                                                :action :kill}]
-                                     :allow-partial-commit false})))))
 
       ))

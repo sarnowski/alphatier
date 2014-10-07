@@ -67,7 +67,6 @@
                                                      :actions [(merge {:type :create}
                                                                       (select-keys task [:id
                                                                                          :executor-id
-                                                                                         :scheduler-id
                                                                                          :resources
                                                                                          :metadata]))]
                                                      :allow-partial-commit false}))

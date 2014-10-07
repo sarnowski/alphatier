@@ -83,7 +83,10 @@
 
   (let [create-actions (->> commit :actions (filter (comp (partial = :create) :type)))]
     (when (not-empty (intersection (set (map :id create-actions)) (-> pre-snapshot :tasks keys set)))
-      (throw (ex-info "Commit contains duplicate create tasks" {}))))
+      (throw (ex-info "Commit contains duplicate create tasks" {})))
+    (when (not-empty (intersection (-> (map keys create-actions) flatten set)
+                                   #{:scheduler-id :lifecycle-phase :metadata-version}))
+      (throw (ex-info "Commit contains illegal properties in create actions" {}))))
 
   (doseq [type [:update :kill]]
     (let [given-task-ids (->> commit :actions (filter #(= (:type %) type)) (map :id) set)
@@ -113,8 +116,8 @@ In all other cases the commit is accepted."
   [commit result]
   (let [allow-partial-commit? (-> commit :allow-partial-commit)
         total (-> commit :actions count)
-        rejects (-> result :rejected-actions vals flatten count)]
-    (if (or (and allow-partial-commit? (= total rejects))
+        rejects (-> result :rejected-actions vals flatten set count)]
+    (if (or (and allow-partial-commit? (= rejects total))
             (and (not allow-partial-commit?) (> rejects 0)))
       (throw (ex-info (str "commit rejected (total: " total " rejects: " rejects " partial: " allow-partial-commit? ")")
                       (map->Result result))))))
