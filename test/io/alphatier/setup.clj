@@ -2,7 +2,8 @@
   (:require [clojure.test :refer :all]
             [io.alphatier.executors :as executors]
             [io.alphatier.pools :as pools]
-            [io.alphatier.schedulers :as schedulers]))
+            [io.alphatier.schedulers :as schedulers]
+            [io.alphatier.constraints :as constraints]))
 
 (def ^:private executor-id-seq (atom 0))
 (def ^:private scheduler-id-seq (atom 0))
@@ -37,7 +38,7 @@
 
 
 (defn create-commit-internal [scheduler-id actions options]
-  (schedulers/map->Commit (merge {:scheduler-id scheduler-id
+  (pools/map->Commit (merge {:scheduler-id scheduler-id
                                   :actions actions
                                   :allow-partial-commit false}
                                  options)))
@@ -76,6 +77,9 @@
 (defn executor-id-of [pool f]
   (-> pool pools/get-snapshot :executors vals f :id))
 
+(defn- new-pool []
+  (constraints/with-defaults (pools/create)))
+
 (defn default-pool
   "Creates a default pool containing:
   
@@ -86,7 +90,7 @@
     * :cpu 2
     * :memory 25"
   []
-  (let [pool (pools/create)]
+  (let [pool (new-pool)]
     (register-defaults pool)))
 
 (defn empty-pool
@@ -96,7 +100,7 @@
     * :cpu 8
     * :memory 100"
   []
-  (let [pool (pools/create)]
+  (let [pool (new-pool)]
     (register-default-executor pool (gen-executor-id))))
 
 (defn exhausted-pool

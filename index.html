@@ -32,7 +32,7 @@ The library is written in [Clojure](http://clojure.org/) and  is available in th
     &lt;dependency&gt;
         &lt;groupId&gt;io.alphatier&lt;/groupId&gt;
         &lt;artifactId&gt;alphatier&lt;/artifactId&gt;
-        &lt;version&gt;0.1.0&lt;/version&gt;
+        &lt;version&gt;0.2.0-SNAPSHOT&lt;/version&gt;
     &lt;/dependency&gt;
 
 The library is written in pure Clojure without [ahead-of-time compilation](http://clojure.org/compilation).
@@ -2946,7 +2946,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.</p>
 <pre><code>&lt;dependency&gt;
     &lt;groupId&gt;io.alphatier&lt;/groupId&gt;
     &lt;artifactId&gt;alphatier&lt;/artifactId&gt;
-    &lt;version&gt;0.1.0&lt;/version&gt;
+    &lt;version&gt;0.2.0-SNAPSHOT&lt;/version&gt;
 &lt;/dependency&gt;
 </code></pre>
 
@@ -2963,7 +2963,7 @@ for interoperability or try our Java library:</p>
 
 <p>If you like to change this library, please have a look at the <a href="README.md">README</a>. Development is done via
 <a href="https://github.com/sarnowski/alphatier">Github</a>.</p>
-</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.6.0</td></tr><tr><td class="dep-name">org.clojure/core.incubator</td><td class="dotted"><hr /></td><td class="dep-version">0.1.3</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#io.alphatier.pools">io.alphatier.pools</a></li><li><a href="#io.alphatier.schedulers">io.alphatier.schedulers</a></li><li><a href="#io.alphatier.constraints">io.alphatier.constraints</a></li><li><a href="#io.alphatier.executors">io.alphatier.executors</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.pools" name="io.alphatier.pools"><h1 class="project-name">io.alphatier.pools</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Basic Concept</h2>
+</div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.6.0</td></tr><tr><td class="dep-name">org.clojure/core.incubator</td><td class="dotted"><hr /></td><td class="dep-version">0.1.3</td></tr><tr><td class="dep-name">org.clojure/core.typed</td><td class="dotted"><hr /></td><td class="dep-version">0.2.71</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#io.alphatier.pools">io.alphatier.pools</a></li><li><a href="#io.alphatier.schedulers">io.alphatier.schedulers</a></li><li><a href="#io.alphatier.constraints">io.alphatier.constraints</a></li><li><a href="#io.alphatier.executors">io.alphatier.executors</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.pools" name="io.alphatier.pools"><h1 class="project-name">io.alphatier.pools</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Basic Concept</h2>
 
 <p>At its core, Alphatier is a database for keeping executor resource capacities and running tasks. Multiple executors
 can be registered in an Alphatier pool. On the other side, multiple schedulers can commit tasks to the pool of
@@ -2985,12 +2985,30 @@ decision to Alphatier.</li>
 basic minimum, Alphatier checks that resources are not exceeded. It can also check for other criteria based on
 <a href="#io.alphatier.constraints">predefined constraints</a>.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.pools
-  (:require [io.alphatier.constraints :as constraints]))</pre></td></tr><tr><td class="docs"><h3>Pools</h3>
+  (:require [clojure.core.typed :refer [defalias ann-record ann Map HMap Any U Ref1 ASeq]]))</pre></td></tr><tr><td class="docs"><h3>Tasks</h3>
 
-<p>A pool represents a snapshot of a set of executors and their tasks. Both executors and tasks are packaged in maps
-with their IDs as key.</p>
-</td><td class="codes"><pre class="brush: clojure">(defrecord Pool
-           [executors tasks constraints])</pre></td></tr><tr><td class="docs"><h3>Executors</h3>
+<p>Tasks are execution requests for executors. A task has an unique identifier. It holds the following information:</p>
+
+<ul>
+<li><code>executor-id</code> is the identifier of the executor this task is assigned to.</li>
+<li><code>lifecycle-phase</code> can be one of the following: <code>:create</code>, <code>:created</code> and <code>:kill</code>.</li>
+<li><code>resources</code> works similar to the <code>resources</code> information on an executor but represents the amount of resources
+that must be reserved and guaranteed for this task.</li>
+<li><code>metadata</code> and <code>metadata-version</code> work exactly like the <code>metadata</code> on an executor but provided by the scheduler.</li>
+</ul>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defalias Resources (Map Any Number))
+(defalias Metadata (Map Any Any))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defalias LifecyclePhase (U ':create ':creating ':created ':kill ':killing))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann-record Task [id :- Any
+                  executor-id :- Any
+                  scheduler-id :- Any
+                  lifecycle-phase :- LifecyclePhase
+                  resources :- Resources
+                  metadata :- Metadata
+                  metadata-version :- Number])
+(defrecord Task
+           [id executor-id scheduler-id lifecycle-phase resources metadata metadata-version])</pre></td></tr><tr><td class="docs"><h3>Executors</h3>
 
 <p>Executors are the workforce of a Alphatier. They have an unique identifier and a status that is <code>:registered</code> or
 <code>:unregistered</code>. In addition, they keep various information about themself and their current work:</p>
@@ -3006,42 +3024,77 @@ optimistic locking.</li>
 <li><code>task-ids-version</code> works similar to the <code>metadata-version</code> as it is a counter thats gets incremented when the
 <code>task-ids</code> list changes.</li>
 </ul>
-</td><td class="codes"><pre class="brush: clojure">(defrecord Executor
-           [id status resources metadata metadata-version task-ids task-ids-version])</pre></td></tr><tr><td class="docs"><h3>Tasks</h3>
+</td><td class="codes"><pre class="brush: clojure">(defalias State (U ':registered ':unregistered))
+(ann-record Executor [id :- Any
+                      status :- State
+                      resources :- Resources
+                      metadata :- Metadata
+                      metadata-version :- Number
+                      task-ids :- (ASeq Any)
+                      task-ids-version :- Number])
+(defrecord Executor
+           [id status resources metadata metadata-version task-ids task-ids-version])</pre></td></tr><tr><td class="docs"><h2>Commits</h2>
 
-<p>Tasks are execution requests for executors. A task has an unique identifier. It holds the following information:</p>
+<p>All changes to the pool by a scheduler have to go through a commit. A scheduler can do three actions:</p>
 
 <ul>
-<li><code>executor-id</code> is the identifier of the executor this task is assigned to.</li>
-<li><code>lifecycle-phase</code> can be one of the following: <code>:create</code>, <code>:created</code> and <code>:kill</code>.</li>
-<li><code>resources</code> works similar to the <code>resources</code> information on an executor but represents the amount of resources
-that must be reserved and guaranteed for this task.</li>
-<li><code>metadata</code> and <code>metadata-version</code> work exactly like the <code>metadata</code> on an executor but provided by the scheduler.</li>
+<li><strong>create</strong> new tasks, assigned to an executor</li>
+<li><strong>update</strong> a task's metadata in order to influence the task during runtime</li>
+<li><strong>kill</strong> a task</li>
 </ul>
-</td><td class="codes"><pre class="brush: clojure">(defrecord Task
-           [id executor-id scheduler-id lifecycle-phase resources metadata metadata-version])</pre></td></tr><tr><td class="docs"><h2>Pool Functions</h2>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defalias ActionType (U ':create ':update ':kill))
+(defalias Action (HMap :mandatory {:id Any
+                                   :type ActionType
+                                   :executor-id Any
+                                   :resources Resources}
+                       :optional {:metadata Metadata}
+                       :complete? true))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defrecord Commit [scheduler-id actions allow-partial-commit])
+(ann-record Commit [scheduler-id :- Any
+                    actions :- (ASeq Action)
+                    allow-partial-commit :- Boolean])</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defalias Executors (Map Any Executor))
+(defalias Tasks (Map Any Task))
+(defalias Snapshot '{:executors Executors :tasks Tasks})</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defalias ConstraintType (U ':pre ':post))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defalias PreConstraint [Commit Snapshot -&gt; (ASeq Action)])
+(defalias PostConstraint [Commit Snapshot Snapshot -&gt; (ASeq Action)])
+(defalias Constraint (U PreConstraint PostConstraint))</pre></td></tr><tr><td class="docs"><h3>Pools</h3>
+
+<p>A pool represents a snapshot of a set of executors and their tasks. Both executors and tasks are packaged in maps
+with their IDs as key.</p>
+</td><td class="codes"><pre class="brush: clojure">(ann-record Pool [executors :- Executors
+                  tasks :- Tasks
+                  constraints :- '{:pre (Map Any PreConstraint)
+                                   :post (Map Any PostConstraint)}])
+(defrecord Pool [executors tasks constraints])</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defalias PoolRef (Ref1 Pool))</pre></td></tr><tr><td class="docs"><h2>Pool Functions</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>A new pool keeps track of the state of the pool. Access to it should be done via the <code>get-snapshot</code> function.
    The new pool has already all built-in constraints added.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn create
+</td><td class="codes"><pre class="brush: clojure">(ann create [-&gt; PoolRef])
+(defn create
   []
   (ref (map-&gt;Pool {:executors {}
                    :tasks {}
-                   :constraints
-                     {:pre
-                        {:optimistic-locking constraints/optimistic-locking}
-                      :post
-                        {:no-resource-overbooking constraints/no-resource-overbooking}}})))</pre></td></tr><tr><td class="docs"><p>When getting a snapshot of a pool, you get an immutable view of the current executors and tasks. This view is
+                   :constraints {:pre {} :post {}}})))</pre></td></tr><tr><td class="docs"><p>When getting a snapshot of a pool, you get an immutable view of the current executors and tasks. This view is
    guarenteed to be consistent.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn get-snapshot
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check get-snapshot [PoolRef -&gt; Snapshot])
+(defn get-snapshot
   [pool]
-  (select-keys @pool [:executors :tasks]))</pre></td></tr><tr><td class="docs"><p>It is also possible to create a new pool based on an old state. This can be used to simulate commits based on a real
+    ; TODO this should be possible with core.typed!
+    (select-keys @pool [:executors :tasks]))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check with-snapshot [Pool Snapshot -&gt; Pool])
+(defn- with-snapshot [pool snapshot]
+  (merge pool snapshot))</pre></td></tr><tr><td class="docs"><p>It is also possible to create a new pool based on an old state. This can be used to simulate commits based on a real
    pool that should not affect the live system or to make a pool durable and restore it later. The new pool has the
    default constraints added, not necessarily the constraints when the snapshot was made.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn create-with-snapshot
+</td><td class="codes"><pre class="brush: clojure">(ann create-with-snapshot [Snapshot -&gt; PoolRef])
+(defn create-with-snapshot
   [snapshot]
   (let [pool (create)]
     (dosync
-      (alter pool merge snapshot))
+      (alter pool with-snapshot snapshot))
     pool))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.schedulers" name="io.alphatier.schedulers"><h1 class="project-name">io.alphatier.schedulers</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Schedulers</h2>
 
 <p>Schedulers are the decision maker in the Alphatier world. They are able to create and kill tasks every time they like
@@ -3067,36 +3120,51 @@ constraints. Built-in is optimistic locking of executor or task data and protect
 <p>Isolation is provided through <a href="http://clojure.org/refs">Clojure's STM</a>. If writes happen to the state while a
 transaction runs, the transaction will be repeated with the new state.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.schedulers
-  (:require [io.alphatier.pools :as pools]
-            [clojure.set :refer [intersection union superset?]]))</pre></td></tr><tr><td class="docs"><h2>Commits</h2>
-
-<p>All changes to the pool by a scheduler have to go through a commit. A scheduler can do three actions:</p>
-
-<ul>
-<li><strong>create</strong> new tasks, assigned to an executor</li>
-<li><strong>update</strong> a task's metadata in order to influence the task during runtime</li>
-<li><strong>kill</strong> a task</li>
-</ul>
-</td><td class="codes"><pre class="brush: clojure">(defrecord Commit [scheduler-id actions allow-partial-commit])</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defrecord Result [accepted-actions rejected-actions pre-snapshot post-snapshot])</pre></td></tr><tr><td class="docs"><p>Creating a tasks registers it in the pool and assigns it to the given executor.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- create-task
+  (:require [clojure.core.typed :refer [ann-record defalias ann Any Fn IFn ASeq Map doseq]]
+            [clojure.set :refer [intersection union superset?]]
+            [io.alphatier.pools :refer :all])
+  (:import [io.alphatier.pools Pool Task Commit]))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann-record Result [accepted-actions :- (ASeq Action)
+                    rejected-actions :- (Map Any (ASeq Action))
+                    pre-snapshot :- Snapshot
+                    post-snapshot :- Snapshot])
+(defrecord Result [accepted-actions rejected-actions pre-snapshot post-snapshot])</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check add-task [Pool Task -&gt; Pool])
+(defn- add-task [pool task]
+  (let [task-id (:id task)
+        executor-id (:executor-id task)]
+    (-&gt; pool
+        (assoc-in [:tasks task-id] task)
+        (update-in [:executors executor-id :task-ids] conj task-id)
+        (update-in [:executors executor-id :task-ids-version] inc))))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defalias CommitAction [PoolRef Any Action -&gt; Pool])</pre></td></tr><tr><td class="docs"><p>Creating a tasks registers it in the pool and assigns it to the given executor.</p>
+</td><td class="codes"><pre class="brush: clojure">(ann create-task CommitAction)
+(defn- create-task
   [pool scheduler-id action]
-  (let [task (pools/map-&gt;Task (merge
-                                {:scheduler-id scheduler-id
-                                 :lifecycle-phase :create
-                                 :metadata-version 0}
-                                action))]
-    (alter pool assoc-in [:tasks (:id task)] task)
-    (alter pool update-in [:executors (:executor-id task) :task-ids] conj (:id task))
-    (alter pool update-in [:executors (:executor-id task) :task-ids-version] inc)))</pre></td></tr><tr><td class="docs"><p>Updating a task modifies the task's metadata.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- update-task
-  [pool scheduler-id task]
-  (alter pool update-in [:tasks (:id task) :metadata] merge (:metadata task))
-  (alter pool update-in [:tasks (:id task) :metadata-version] inc))</pre></td></tr><tr><td class="docs"><p>Killing a tasks sets its lifecycle-phase to <code>:kill</code>, so that the executor can actually kill it.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- kill-task
-  [pool scheduler-id task]
-  (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))</pre></td></tr><tr><td class="docs"><p>All given tasks must provide the action you want to perform in the <code>:action</code> key.</p>
-</td><td class="codes"><pre class="brush: clojure">(def ^:private commit-actions {:create create-task
+  (let [task (map-&gt;Task (merge {:id (:id action)
+                                :executor-id (:executor-id action)
+                                :scheduler-id scheduler-id
+                                :lifecycle-phase :create
+                                :resources (:resources action)
+                                :metadata (or (:metadata action) {})
+                                :metadata-version 0}))]
+    (alter pool add-task task)))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check update-metadata [Pool Action -&gt; Pool])
+(defn- update-metadata [pool action]
+  (let [task-id (:id action)]
+    (-&gt; pool
+        (update-in [:tasks task-id :metadata] merge (:metadata action))
+        (update-in [:tasks task-id :metadata-version] inc))))</pre></td></tr><tr><td class="docs"><p>Updating a task modifies the task's metadata.</p>
+</td><td class="codes"><pre class="brush: clojure">(ann update-task CommitAction)
+(defn- update-task
+  [pool scheduler-id action]
+  (alter pool update-metadata action))</pre></td></tr><tr><td class="docs"><p>Killing a tasks sets its lifecycle-phase to <code>:kill</code>, so that the executor can actually kill it.</p>
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check kill-task CommitAction)
+(defn- kill-task
+  [pool scheduler-id action]
+  (alter pool assoc-in [:tasks (:id action) :lifecycle-phase] :kill))</pre></td></tr><tr><td class="docs"><p>All given tasks must provide the action you want to perform in the <code>:action</code> key.</p>
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check commit-actions [ActionType -&gt; CommitAction])
+(def ^:private commit-actions {:create create-task
                                :update update-task
                                :kill kill-task})</pre></td></tr><tr><td class="docs"><p>Commits will get validated upon commit. Valid commit satisfy all of the following criteria:</p>
 
@@ -3107,29 +3175,33 @@ transaction runs, the transaction will be repeated with the new state.</p>
 <li>it doesn't reference a missing executor, i.e. invalid <code>:executor-id</code></li>
 <li>it <strong>does</strong> specify all resources the corresponding executor is providing</li>
 </ul>
-</td><td class="codes"><pre class="brush: clojure">(defn- validate-commit
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check validate-commit [Commit Snapshot -&gt; Any])
+(defn- validate-commit
   [commit pre-snapshot]
   (let [task-ids (-&gt;&gt; commit :actions (map :id))]
     (when (distinct? (-&gt; task-ids sort) (-&gt; task-ids set sort))
       (throw (ex-info &quot;Commit contains duplicate tasks&quot; {}))))
   (let [create-actions (-&gt;&gt; commit :actions (filter (comp (partial = :create) :type)))]
     (when (not-empty (intersection (set (map :id create-actions)) (-&gt; pre-snapshot :tasks keys set)))
-      (throw (ex-info &quot;Commit contains duplicate create tasks&quot; {}))))
-  (doseq [type [:update :kill]]
-    (let [given-task-ids (-&gt;&gt; commit :actions (filter #(= (:type %) type)) (map :id) set)
-          existing-task-ids (-&gt;&gt; pre-snapshot :tasks vals (map :id) set)]
-      (when (and (not-empty given-task-ids)
-                 (not (superset? existing-task-ids given-task-ids)))
-        (throw (ex-info (str &quot;Commit contains reference to missing task for &quot; (name type)) {})))))
-  (doseq [executor-id (-&gt;&gt; commit :actions (filter (comp (partial = :create) :type)) (map :executor-id))]
-    (when-not (contains? (-&gt; pre-snapshot :executors) executor-id)
-      (throw (ex-info (str &quot;Commit contains reference to missing executor &quot; executor-id) {})))
-    (let [executor (-&gt; pre-snapshot :executors (get executor-id))
-          actions (-&gt;&gt; commit :actions (filter (comp #(= executor-id %) :executor-id)))
-          given-resources (-&gt;&gt; actions (map (comp keys :resources)) flatten set)
-          existing-resources (-&gt;&gt; executor :resources keys set)]
-      (when-not (= given-resources existing-resources)
-        (throw (ex-info &quot;Commit contains missing resource&quot; {}))))))</pre></td></tr><tr><td class="docs"><p>Actions may get rejected during commit by different pre/post-commit constraints.
+      (throw (ex-info &quot;Commit contains duplicate create tasks&quot; {})))
+    (when (not-empty (intersection (-&gt; (map keys create-actions) flatten set)
+                                   #{:scheduler-id :lifecycle-phase :metadata-version}))
+      (throw (ex-info &quot;Commit contains illegal properties in create actions&quot; {})))
+    (doseq [type :- ActionType [:update :kill]]
+      (let [given-task-ids (-&gt;&gt; commit :actions (filter #(= (:type %) type)) (map :id) set)
+            existing-task-ids (-&gt;&gt; pre-snapshot :tasks vals (map :id) set)]
+        (when (and (not-empty given-task-ids)
+                   (not (superset? existing-task-ids given-task-ids)))
+          (throw (ex-info (str &quot;Commit contains reference to missing task for &quot; (name type)) {})))))
+    (doseq [executor-id (-&gt;&gt; create-actions (map :executor-id))]
+      (when-not (contains? (-&gt; pre-snapshot :executors) executor-id)
+        (throw (ex-info (str &quot;Commit contains reference to missing executor &quot; executor-id) {})))
+      (let [executor (-&gt; pre-snapshot :executors (get executor-id))
+            actions (-&gt;&gt; commit :actions (filter (comp #(= executor-id %) :executor-id)))
+            given-resources (-&gt;&gt; actions (map (comp keys :resources)) flatten set)
+            existing-resources (-&gt;&gt; executor :resources keys set)]
+        (when-not (= given-resources existing-resources)
+          (throw (ex-info &quot;Commit contains missing resource&quot; {})))))))</pre></td></tr><tr><td class="docs"><p>Actions may get rejected during commit by different pre/post-commit constraints.
 Commits are considered rejected if</p>
 
 <ul>
@@ -3138,7 +3210,8 @@ Commits are considered rejected if</p>
 </ul>
 
 <p>In all other cases the commit is accepted.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- reject-if-needed
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check reject-if-necessary [Commit Result -&gt; Any])
+(defn- reject-if-necessary
   [commit result]
   (let [allow-partial-commit? (-&gt; commit :allow-partial-commit)
         total (-&gt; commit :actions count)
@@ -3173,11 +3246,12 @@ constraint.</p>
 intended to replay already committed commits (e.g. in an replication mode).</p>
 
 <p>You can not issue two actions for the same task at once.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn commit
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check commit [PoolRef Commit &amp; :optional {:force Boolean} -&gt; Result])
+(defn commit
   [pool commit &amp; {:keys [force] :or {force false}}]
   (dosync
     (let [pre-snapshot @pool
-          rejections (atom {})]
+          rejections (atom {})] ;TODO since we only use this locally, there has to be a better way
       (validate-commit commit pre-snapshot)
       ; Phase 1: check pre constraints
       (when-not force
@@ -3185,7 +3259,7 @@ intended to replay already committed commits (e.g. in an replication mode).</p>
                (partial merge-with into)
                (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot)])
                              (-&gt; pre-snapshot :constraints :pre))))
-        (reject-if-needed commit {:accepted-actions []
+        (reject-if-necessary commit {:accepted-actions []
                                   :rejected-actions @rejections
                                   :pre-snapshot pre-snapshot
                                   :post-snapshot nil}))
@@ -3207,7 +3281,7 @@ intended to replay already committed commits (e.g. in an replication mode).</p>
                       :rejected-actions @rejections
                       :pre-snapshot pre-snapshot
                       :post-snapshot post-snapshot}]
-          (reject-if-needed commit result)
+          (reject-if-necessary commit result)
           ; accept!
           (map-&gt;Result result))))))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.constraints" name="io.alphatier.constraints"><h1 class="project-name">io.alphatier.constraints</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Constraints</h2>
 
@@ -3222,18 +3296,54 @@ rejected. All constraints run within the commit transaction and can lead to atom
 <p><strong>pre-constraints</strong> are functions with a signature <code>(fn [commit pre-snapshot])</code>, while <strong>post-constraints</strong> require
 the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.constraints
-  (:require [clojure.core.incubator :as clojure-incubator]))</pre></td></tr><tr><td class="docs"><p>To add a constraint to a pool, you have to provide its type which is <code>:pre</code> or <code>:post</code>.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn add
-  [pool type name fn]
+  (:require [clojure.core.typed :refer [ann defalias Any List fn IFn U Map All Coll let ASeq Vec Seqable HMap Seq]]
+            [clojure.core.incubator :refer [dissoc-in]]
+            [io.alphatier.pools :refer :all])
+  (:import [io.alphatier.pools Pool Commit Task Executor]))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check add-constraint [Pool ConstraintType Any Constraint -&gt; Pool])
+(defn- add-constraint [pool type name constraint]
+  (assoc-in pool [:constraints type name] constraint))</pre></td></tr><tr><td class="docs"><p>To add a constraint to a pool, you have to provide its type which is <code>:pre</code> or <code>:post</code>.</p>
+</td><td class="codes"><pre class="brush: clojure">(ann add (IFn [PoolRef ':pre Any PreConstraint -&gt; Pool]
+              [PoolRef ':post Any PostConstraint -&gt; Pool]))
+(defn add
+  [pool type name constraint]
   (dosync
-    (alter pool assoc-in [:constraints type name] fn)))</pre></td></tr><tr><td class="docs"><p>Constraints are identified by their name and can be removed by it.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn del
+    (alter pool add-constraint type name constraint)))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check del-constraint [Pool ConstraintType Any -&gt; Pool])
+(defn- del-constraint [pool type name]
+  (dissoc-in pool [:constraints type name]))</pre></td></tr><tr><td class="docs"><p>Constraints are identified by their name and can be removed by it.</p>
+</td><td class="codes"><pre class="brush: clojure">(ann del [PoolRef ConstraintType Any -&gt; Pool])
+(defn del
   [pool type name]
   (dosync
-    (alter pool clojure-incubator/dissoc-in [:constraints type name])))</pre></td></tr><tr><td class="docs"><h3>Built-in constraints</h3>
+    (alter pool del-constraint type name)))</pre></td></tr><tr><td class="docs"><h3>Built-in constraints</h3>
 
 <p>This list of built-in constraints is automatically added to all new pools.</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Every task can use optimistic locking semantic to be only applied if the state, used by the scheduler, is still the
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defalias VersionType (U ':executor-metadata-version ':executor-task-ids-version ':metadata-version))
+(defalias VersionExtractor [Snapshot Action -&gt; Number])</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check versions (Map VersionType VersionExtractor))
+(def ^:private versions
+  {:executor-metadata-version #(get-in %1 [:executors (:executor-id %2) :metadata-version])
+   :executor-task-ids-version #(get-in %1 [:executors (:executor-id %2) :task-ids-version])
+   :metadata-version #(get-in %1 [:tasks (:id %2) :metadata-version])})</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann versioned? [Action -&gt; Boolean])
+(defn- versioned? [action]
+  (not (empty? (select-keys action (keys versions)))))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann version-outdated? [Snapshot Action -&gt; ['[VersionType VersionExtractor] -&gt; Boolean]])
+(defn- version-outdated? [snapshot action]
+  (fn [[type extractor]]
+    (and (contains? action type)
+         (not= (type action) (extractor snapshot action)))))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann outdated? [Snapshot Action -&gt; Boolean])
+(defn- outdated? [snapshot action]
+  (boolean (some (version-outdated? snapshot action) versions)))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann collect-if (All [x] [[x -&gt; Boolean] -&gt; [(ASeq x) x -&gt; (ASeq x)]]))
+(defn- collect-if [pred]
+  (fn [coll x]
+    (if (pred x)
+      (conj coll x)
+      coll)))</pre></td></tr><tr><td class="docs"><p>Every task can use optimistic locking semantic to be only applied if the state, used by the scheduler, is still the
    current one. In order to achieve the optimistic locking, you can add the following parameters to the supplied actions:</p>
 
 <ul>
@@ -3241,54 +3351,85 @@ the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.<
 <li><code>:executor-task-ids-version</code> referencing the executor's tasks version</li>
 <li><code>:metadata-version</code> referencing the task's metadata version</li>
 </ul>
-</td><td class="codes"><pre class="brush: clojure">(defn optimistic-locking
+</td><td class="codes"><pre class="brush: clojure">(ann optimistic-locking PreConstraint)
+(defn optimistic-locking
   [commit pre-snapshot]
-  (let [versions {:executor-metadata-version #(get-in pre-snapshot [:executors (:executor-id %) :metadata-version])
-                  :executor-task-ids-version #(get-in pre-snapshot [:executors (:executor-id %) :task-ids-version])
-                  :metadata-version #(get-in pre-snapshot [:tasks (:id %) :metadata-version])}
-        actions (-&gt;&gt; commit :actions (filter (comp not-empty #(select-keys % (keys versions)))))]
-    (-&gt;&gt; actions
-         (reduce
-           (fn [rejected-actions action]
-             (let [dirty? (fn [[field extractor]]
-                            (and (contains? action field)
-                                 (not= (field action) (extractor action))))]
-               (if (some dirty? versions)
-                 (conj rejected-actions action)
-                 rejected-actions)))
-           []))))</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(defn no-resource-overbooking [commit pre-snapshot post-snapshot]
-  (let [sum (fn [resources] (reduce (partial merge-with +) resources))
-        actions (-&gt;&gt; commit :actions (filter (comp #{:create} :type)) (group-by :executor-id))
-        tasks (-&gt;&gt; pre-snapshot :tasks vals (group-by :executor-id))
-        reserved-resources (-&gt;&gt; tasks
-                                (map (fn [[k v]] [k (-&gt;&gt; v (map :resources) sum)]))
-                                (into {}))
+  (let [actions (-&gt;&gt; commit :actions (filter versioned?))
+        outdated-now? (partial outdated? pre-snapshot)
+        collect :- [(ASeq Action) Action -&gt; (ASeq Action)] (collect-if outdated-now?)
+        rejected-actions :- (ASeq Action) '()]
+    (reduce collect rejected-actions actions)))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check create-action? [Action -&gt; Boolean])
+(def ^:private create-action? (comp #{:create} :type))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check resources-of [Any -&gt; Resources])
+(def ^:private resources-of :resources)</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check sum-resources ['[Any (Seqable Task)] -&gt; '[Any Resources]])
+(defn- sum-resources [[executor-id tasks]]
+  [executor-id (-&gt;&gt; tasks
+                    (map resources-of)
+                    (reduce (partial merge-with +)))])</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann calculate-consumed-resources [(Map Any (Seqable Task)) -&gt; (Map Any Resources)])
+(defn- calculate-consumed-resources [tasks]
+  (-&gt;&gt; tasks (map sum-resources) (into {})))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check executor-id (IFn [Action -&gt; Any]
+                                 [Task -&gt; Any]))
+(def ^:private executor-id :executor-id)</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann clojure.core/group-by (All [x y] [[x -&gt; y] (U nil (Seqable x)) -&gt; (Map y (Vec x))]))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defalias IntermediateResult (HMap :mandatory {:resources Resources
+                                               :rejected (Vec Action)}))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check reject [IntermediateResult Action -&gt; IntermediateResult])
+(defn- reject [result action]
+  (update-in result [:rejected] conj action))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann simulate-commit [Executor IntermediateResult Action -&gt; IntermediateResult])
+(defn simulate-commit [executor result action]
+  (let [new-resources (merge-with + (resources-of result) (resources-of action))
+        free-resources (merge-with - (resources-of executor) new-resources)]
+    (if (some (partial &gt; 0) (vals free-resources))
+      (reject result action)
+      (assoc result :resources new-resources))))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann no-resource-overbooking PostConstraint)
+(defn no-resource-overbooking [commit pre-snapshot post-snapshot]
+  (let [actions :- (Map Any (Vec Action)) (-&gt;&gt; commit :actions (filter create-action?) (group-by executor-id))
+        tasks :- (Map Any (Vec Task)) (-&gt;&gt; pre-snapshot :tasks vals (group-by executor-id))
+        reserved-resources (calculate-consumed-resources tasks)
         executors (-&gt; pre-snapshot :executors vals)]
     (-&gt;&gt; executors
-         (map (fn [executor]
-                (reduce (fn [result action]
-                          (let [new-resources (merge-with + (:resources action) (:resources result))
-                                free-resources (merge-with - (:resources executor) new-resources)]
-                            (if (some #(&lt; % 0) (vals free-resources))
-                              (update-in result [:rejected] conj action)
-                              (assoc result :resources new-resources))))
-                        {:resources (-&gt; executor :id reserved-resources)
+         (map (fn [executor :- Executor]
+                (reduce (partial simulate-commit executor)
+                        {:resources (get reserved-resources (:id executor) {})
                          :rejected  []}
-                        (actions (:id executor)))))
+                        (get actions (:id executor) []))))
          (map :rejected)
-         flatten)))</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.executors" name="io.alphatier.executors"><h1 class="project-name">io.alphatier.executors</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Executors</h2>
+         flatten)))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann with-defaults [PoolRef -&gt; PoolRef])
+(defn with-defaults [pool]
+  (add pool :pre :optimistic-locking optimistic-locking)
+  (add pool :post :no-resource-overbooking no-resource-overbooking)
+  pool)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#io.alphatier.executors" name="io.alphatier.executors"><h1 class="project-name">io.alphatier.executors</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs"><h2>Executors</h2>
 
 <p>Executors are on the other side of schedulers. They are the workforce of Alphatier and execute whatever the
 schedulers wants them to do.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.executors
-  (:require [clojure.core.incubator :as clojure-incubator]
-            [io.alphatier.pools :as core]))</pre></td></tr><tr><td class="docs"><h3>Executor Management</h3>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Only registered executors are eligible to receive tasks from schedulers. The registration can also provide
+  (:require [clojure.core.typed :refer [ann Any ASeq IFn HVec doseq]]
+            [clojure.core.incubator :refer [dissoc-in]]
+            [io.alphatier.pools :refer :all])
+  (:import [io.alphatier.pools Pool Executor Task]
+           [clojure.lang Keyword]))</pre></td></tr><tr><td class="docs"><h3>Executor Management</h3>
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check add-executor [Pool Executor -&gt; Pool])
+(defn- add-executor [pool executor]
+  (assoc-in pool [:executors (:id executor)] executor))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check add-task [Pool Task -&gt; Pool])
+(defn- add-task [pool task]
+  (assoc-in pool [:tasks (:id task)] task))</pre></td></tr><tr><td class="docs"><p>Only registered executors are eligible to receive tasks from schedulers. The registration can also provide
    information about already running tasks. The meta data can signal various constraints to the schedulers like
    environment or operating system information or other capabilities. If an executor gets reregistered, all previous
    information get overwritten.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn register
+</td><td class="codes"><pre class="brush: clojure">(ann register [PoolRef Any Resources &amp; :optional {:metadata Metadata
+                                                  :metadata-version Number
+                                                  :tasks (ASeq Task)
+                                                  :task-ids-version Number} -&gt; PoolRef])
+(defn register
   [pool executor-id resources &amp; {:keys [metadata
                                         metadata-version
                                         tasks
@@ -3302,51 +3443,74 @@ schedulers wants them to do.</p>
   (if (not (every? number? (vals resources)))
     (throw (IllegalStateException. &quot;resource values must be numbers&quot;)))
   (dosync
-    (alter pool assoc-in [:executors executor-id]
-           (core/map-&gt;Executor {:id executor-id
-                                :status :registered
-                                :resources resources
-                                :metadata metadata
-                                :metadata-version metadata-version
-                                :task-ids (map :id tasks)
-                                :task-ids-version task-ids-version}))
-    (doseq [task tasks]
+    (alter pool add-executor (map-&gt;Executor {:id executor-id
+                                             :status :registered
+                                             :resources resources
+                                             :metadata metadata
+                                             :metadata-version metadata-version
+                                             :task-ids (map :id tasks)
+                                             :task-ids-version task-ids-version}))
+    (doseq [task :- Task tasks]
       ; TODO do more intelligent merges e.g. use metadata version and add tasks to executor if he doesnt know yet
-      (alter pool assoc-in [:tasks (:id task)] task)))
-  pool)</pre></td></tr><tr><td class="docs"><p>Executors can update their meta data while being registered. This can be used to inform schedulers about general
+      (alter pool add-task task)))
+  pool)</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check update-metadata (IFn [Pool ':executors Any Metadata -&gt; Pool]
+                                     [Pool ':tasks Any Metadata -&gt; Pool]))
+(defn- update-metadata [pool path id metadata]
+  (update-in pool [path id :metadata] merge metadata))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check bump-version (IFn [Pool ':executors Any -&gt; Pool]
+                                  [Pool ':tasks Any -&gt; Pool]
+                                  [Pool ':executors Any Keyword -&gt; Pool]))
+(defn- bump-version
+  ([pool path id] (bump-version pool path id :metadata-version))
+  ([pool path id suffix] (update-in pool [path id suffix] inc)))</pre></td></tr><tr><td class="docs"><p>Executors can update their meta data while being registered. This can be used to inform schedulers about general
    executor state. For example, one could set a <code>maintenance</code> flag to signal that an executor does not accept new tasks
    until the flag is removed again.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn update
+</td><td class="codes"><pre class="brush: clojure">(ann update [PoolRef Any Metadata -&gt; PoolRef])
+(defn update
   [pool executor-id metadata]
   (dosync
-    (alter pool update-in [:executors executor-id :metadata] merge metadata)
-    (alter pool update-in [:executors executor-id :metadata-version] inc))
-  pool)</pre></td></tr><tr><td class="docs"><p>If an executor shuts down (expected or unexpectedly), it has to be unregistered, so that schedulers do not use it
+    (alter pool update-metadata :executors executor-id metadata)
+    (alter pool bump-version :executors executor-id))
+  pool)</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check update-status [Pool Any State -&gt; Pool])
+(defn- update-status [pool executor-id state]
+  (assoc-in pool [:executors executor-id :status] state))</pre></td></tr><tr><td class="docs"><p>If an executor shuts down (expected or unexpectedly), it has to be unregistered, so that schedulers do not use it
    anymore.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn unregister
+</td><td class="codes"><pre class="brush: clojure">(ann unregister [PoolRef Any -&gt; PoolRef])
+(defn unregister
   [pool executor-id]
   (dosync
-    (alter pool assoc-in [:executors executor-id :status] :unregistered))
+    (alter pool update-status executor-id :unregistered))
   pool)</pre></td></tr><tr><td class="docs"><h3>Task Management</h3>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>The executor has to push the lifecycle-phase to <code>:created</code> as soon as the task was created. In addition, the executor
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check update-lifecycle-phase [Pool Any LifecyclePhase -&gt; Pool])
+(defn- update-lifecycle-phase [pool task-id lifecycle-phase]
+  (assoc-in pool [:tasks task-id :lifecycle-phase] lifecycle-phase))</pre></td></tr><tr><td class="docs"><p>The executor has to push the lifecycle-phase to <code>:created</code> as soon as the task was created. In addition, the executor
    could update the meta data of a task as well. This could be internal state of the task like a progress state. It is
    possible to do lightweight IPC with the scheduler that way.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn update-task
+</td><td class="codes"><pre class="brush: clojure">(ann update-task [PoolRef Any LifecyclePhase Metadata -&gt; PoolRef])
+(defn update-task
   [pool task-id lifecycle-phase metadata]
   (dosync
     ; TODO make sure lifecycle-phase can only go forward, not back
-    (alter pool assoc-in [:tasks task-id :lifecycle-phase] lifecycle-phase)
-    (alter pool update-in [:tasks task-id :metadata] merge metadata)
-    (alter pool update-in [:tasks task-id :metadata-version] inc))
-  pool)</pre></td></tr><tr><td class="docs"><p>If a task was requested to be killed, the execuor has to kill the task and report back, that the task was actually
+    (alter pool update-lifecycle-phase task-id lifecycle-phase)
+    (alter pool update-metadata :tasks task-id metadata)
+    (alter pool bump-version :tasks task-id))
+  pool)</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check remove-task [Pool Any Any -&gt; Pool])
+(defn- remove-task [pool executor-id task-id]
+  (-&gt; pool
+      (dissoc-in [:tasks task-id])
+      (update-in [:executors executor-id :task-ids] (partial remove #{task-id}))))</pre></td></tr><tr><td class="docs"><p>If a task was requested to be killed, the execuor has to kill the task and report back, that the task was actually
    killed. This leads to the complete removal of the task from the pool.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn kill-task
+</td><td class="codes"><pre class="brush: clojure">(ann kill-task [PoolRef Any -&gt; PoolRef])
+(defn kill-task
   [pool task-id]
   (dosync
     (let [executor-id (get-in @pool [:tasks task-id :executor-id])]
-      (alter pool clojure-incubator/dissoc-in [:tasks task-id])
-      (alter pool update-in [:executors executor-id :task-ids] #(remove #{task-id} %))
-      (alter pool update-in [:executors executor-id :task-ids-version] inc)))
+      (alter pool remove-task executor-id task-id)
+      (alter pool bump-version :executors executor-id :task-ids-version)))
   pool)</pre></td></tr><tr><td class="spacer docs">&nbsp;</td><td class="codes" /></tr></table><div class="footer">Generated by <a href="https://github.com/gdeer81/marginalia">Marginalia</a>.&nbsp;&nbsp;Syntax highlighting provided by Alex Gorbatchev's <a href="http://alexgorbatchev.com/SyntaxHighlighter/">SyntaxHighlighter</a><div id="floating-toc"><ul><li class="floating-toc-li" id="floating-toc_io.alphatier.pools">io.alphatier.pools</li><li class="floating-toc-li" id="floating-toc_io.alphatier.schedulers">io.alphatier.schedulers</li><li class="floating-toc-li" id="floating-toc_io.alphatier.constraints">io.alphatier.constraints</li><li class="floating-toc-li" id="floating-toc_io.alphatier.executors">io.alphatier.executors</li></ul></div></div><script type="text/javascript">SyntaxHighlighter.defaults['gutter'] = false;
 SyntaxHighlighter.all();
 

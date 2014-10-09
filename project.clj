@@ -33,7 +33,7 @@ The library is written in [Clojure](http://clojure.org/) and  is available in th
     <dependency>
         <groupId>io.alphatier</groupId>
         <artifactId>alphatier</artifactId>
-        <version>0.1.0</version>
+        <version>0.2.0-SNAPSHOT</version>
     </dependency>
 
 The library is written in pure Clojure without [ahead-of-time compilation](http://clojure.org/compilation).
@@ -72,12 +72,21 @@ If you like to change this library, please have a look at the [README](README.md
                   [:timezone "+1"]]]
 
   :min-lein-version "2.0.0"
+  :eval-in :leiningen
 
   :dependencies [[org.clojure/clojure "1.6.0"]
-                 [org.clojure/core.incubator "0.1.3"]]
+                 [org.clojure/core.incubator "0.1.3"]
+                 [org.clojure/core.typed "0.2.71"]]
 
   :plugins [[lein-marginalia "0.8.0"]
-            [lein-pprint "1.1.1"]]
+            [lein-pprint "1.1.1"]
+            [lein-typed "0.3.5"]
+            [lein-kibit "0.0.8"]]
+
+  :core.typed {:check [io.alphatier.pools
+                       io.alphatier.executors
+                       io.alphatier.constraints
+                       io.alphatier.schedulers]}
 
   :aliases {"doc" ["marg"
                    "-n" "Alphatier"
@@ -87,11 +96,17 @@ If you like to change this library, please have a look at the [README](README.md
                    "src/io/alphatier/pools.clj"
                    "src/io/alphatier/schedulers.clj"
                    "src/io/alphatier/constraints.clj"
-                   "src/io/alphatier/executors.clj"]}
+                   "src/io/alphatier/executors.clj"]
+            "verify" ["do"
+                      ["kibit"]
+                      ["check"]
+                      ["test"]
+                      ["typed" "check"]]}
 
   :release-tasks [["vcs" "assert-committed"]
                   ["change" "version" "leiningen.release/bump-version" "release"]
-                  ["doc"]  ; generate documentation TODO: set version in maven dependency documentation in :description
+                  ["update-desc"]
+                  ["doc"]
                   ["vcs" "commit"]
                   ["vcs" "tag"]
                   ["deploy"]
