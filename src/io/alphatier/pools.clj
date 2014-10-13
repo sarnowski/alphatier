@@ -60,9 +60,9 @@
 ;; * `task-ids` is a list of task IDs that are assigned to this executor.
 ;; * `task-ids-version` works similar to the `metadata-version` as it is a counter thats gets incremented when the
 ;;   `task-ids` list changes.
-(defalias State (U ':registered ':unregistered))
+(defalias Status (U ':registered ':unregistered))
 (ann-record Executor [id :- Any
-                      status :- State
+                      status :- Status
                       resources :- Resources
                       metadata :- Metadata
                       metadata-version :- Number
@@ -84,7 +84,10 @@
                                    :type ActionType
                                    :executor-id Any
                                    :resources Resources}
-                       :optional {:metadata Metadata}
+                       :optional {:metadata Metadata
+                                  :metadata-version Number
+                                  :executor-metadata-version Number
+                                  :executor-task-ids-version Number}
                        :complete? true))
 
 (defrecord Commit [scheduler-id actions allow-partial-commit])

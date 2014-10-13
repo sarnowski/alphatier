@@ -77,7 +77,7 @@
     (alter pool bump-version :executors executor-id))
   pool)
 
-(ann ^:no-check update-status [Pool Any State -> Pool])
+(ann ^:no-check update-status [Pool Any Status -> Pool])
 (defn- update-status [pool executor-id state]
   (assoc-in pool [:executors executor-id :status] state))
 
