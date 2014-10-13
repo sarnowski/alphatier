@@ -24,7 +24,7 @@
 ;; Isolation is provided through [Clojure's STM](http://clojure.org/refs). If writes happen to the state while a
 ;; transaction runs, the transaction will be repeated with the new state.
 (ns io.alphatier.schedulers
-  (:require [clojure.core.typed :refer [ann-record defalias ann Any Fn IFn ASeq Map doseq]]
+  (:require [clojure.core.typed :refer [ann-record defalias ann Any Fn IFn ASeq Map doseq All]]
             [clojure.set :refer [intersection union superset?]]
             [io.alphatier.pools :refer :all])
   (:import [io.alphatier.pools Pool Task Commit]))
@@ -141,6 +141,11 @@ In all other cases the commit is accepted."
       (throw (ex-info (str "commit rejected (total: " total " rejects: " rejects " partial: " allow-partial-commit? ")")
                       (map->Result result))))))
 
+; TODO see if we can make this pass the type checker
+(ann ^:no-check filter-vals (All [k v] (IFn [(Map k v) (Fn [v -> Boolean]) -> (Map k v)])))
+(defn- filter-vals [m pred]
+  (apply dissoc m (for [[k v] m :when (not (pred v))] k)))
+
 ;; ### How to implement a scheduler?
 ;;
 ;; The basic workflow for a scheduler looks like the following:
@@ -182,7 +187,7 @@ You can not issue two actions for the same task at once."
                (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot)])
                              (-> pre-snapshot :constraints :pre))))
         (reject-if-necessary commit {:accepted-actions []
-                                  :rejected-actions @rejections
+                                  :rejected-actions (filter-vals @rejections not-empty)
                                   :pre-snapshot pre-snapshot
                                   :post-snapshot nil}))
 
@@ -204,7 +209,7 @@ You can not issue two actions for the same task at once."
         (let [post-rejected-actions (-> @rejections vals flatten set)
               accepted-actions (->> commit :actions (filter (complement post-rejected-actions)))
               result {:accepted-actions accepted-actions
-                      :rejected-actions @rejections
+                      :rejected-actions (filter-vals @rejections not-empty)
                       :pre-snapshot pre-snapshot
                       :post-snapshot post-snapshot}]
 
