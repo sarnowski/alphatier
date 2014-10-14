@@ -32,7 +32,7 @@ The library is written in [Clojure](http://clojure.org/) and  is available in th
     &lt;dependency&gt;
         &lt;groupId&gt;io.alphatier&lt;/groupId&gt;
         &lt;artifactId&gt;alphatier&lt;/artifactId&gt;
-        &lt;version&gt;0.2.0-SNAPSHOT&lt;/version&gt;
+        &lt;version&gt;0.2.0&lt;/version&gt;
     &lt;/dependency&gt;
 
 The library is written in pure Clojure without [ahead-of-time compilation](http://clojure.org/compilation).
@@ -2914,7 +2914,7 @@ net.brehaut.ClojureTools = (function (SH) {
     build_tree: build_tree
   };
 })(SyntaxHighlighter);
-</script><link href="doc/style.css" rel="stylesheet" tyle="text/css" /><title>Alphatier -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name"><a href="http://alphatier.io">Alphatier</a></h1><h2 class="project-version">0.2.0-SNAPSHOT</h2><br /><p>Alphatier is a resource management library. It is designed to allow different
+</script><link href="doc/style.css" rel="stylesheet" tyle="text/css" /><title>Alphatier -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name"><a href="http://alphatier.io">Alphatier</a></h1><h2 class="project-version">0.2.0</h2><br /><p>Alphatier is a resource management library. It is designed to allow different
 schedulers to share the resources of a pool of executors in order to execute
 tasks with those.</p>
 
@@ -2946,7 +2946,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.</p>
 <pre><code>&lt;dependency&gt;
     &lt;groupId&gt;io.alphatier&lt;/groupId&gt;
     &lt;artifactId&gt;alphatier&lt;/artifactId&gt;
-    &lt;version&gt;0.2.0-SNAPSHOT&lt;/version&gt;
+    &lt;version&gt;0.2.0&lt;/version&gt;
 &lt;/dependency&gt;
 </code></pre>
 
@@ -3024,9 +3024,9 @@ optimistic locking.</li>
 <li><code>task-ids-version</code> works similar to the <code>metadata-version</code> as it is a counter thats gets incremented when the
 <code>task-ids</code> list changes.</li>
 </ul>
-</td><td class="codes"><pre class="brush: clojure">(defalias State (U ':registered ':unregistered))
+</td><td class="codes"><pre class="brush: clojure">(defalias Status (U ':registered ':unregistered))
 (ann-record Executor [id :- Any
-                      status :- State
+                      status :- Status
                       resources :- Resources
                       metadata :- Metadata
                       metadata-version :- Number
@@ -3048,7 +3048,10 @@ optimistic locking.</li>
                                    :type ActionType
                                    :executor-id Any
                                    :resources Resources}
-                       :optional {:metadata Metadata}
+                       :optional {:metadata Metadata
+                                  :metadata-version Number
+                                  :executor-metadata-version Number
+                                  :executor-task-ids-version Number}
                        :complete? true))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(defrecord Commit [scheduler-id actions allow-partial-commit])
 (ann-record Commit [scheduler-id :- Any
@@ -3120,7 +3123,8 @@ constraints. Built-in is optimistic locking of executor or task data and protect
 <p>Isolation is provided through <a href="http://clojure.org/refs">Clojure's STM</a>. If writes happen to the state while a
 transaction runs, the transaction will be repeated with the new state.</p>
 </td><td class="codes"><pre class="brush: clojure">(ns io.alphatier.schedulers
-  (:require [clojure.core.typed :refer [ann-record defalias ann Any Fn IFn ASeq Map doseq]]
+  (:require [clojure.core.typed :refer [ann-record defalias ann Any Fn IFn ASeq Map doseq All]]
+            [clojure.string :as string]
             [clojure.set :refer [intersection union superset?]]
             [io.alphatier.pools :refer :all])
   (:import [io.alphatier.pools Pool Task Commit]))</pre></td></tr><tr><td class="docs">
@@ -3179,7 +3183,7 @@ transaction runs, the transaction will be repeated with the new state.</p>
 (defn- validate-commit
   [commit pre-snapshot]
   (let [task-ids (-&gt;&gt; commit :actions (map :id))]
-    (when (distinct? (-&gt; task-ids sort) (-&gt; task-ids set sort))
+    (when (distinct? (sort task-ids) (-&gt; task-ids set sort))
       (throw (ex-info &quot;Commit contains duplicate tasks&quot; {}))))
   (let [create-actions (-&gt;&gt; commit :actions (filter (comp (partial = :create) :type)))]
     (when (not-empty (intersection (set (map :id create-actions)) (-&gt; pre-snapshot :tasks keys set)))
@@ -3193,15 +3197,46 @@ transaction runs, the transaction will be repeated with the new state.</p>
         (when (and (not-empty given-task-ids)
                    (not (superset? existing-task-ids given-task-ids)))
           (throw (ex-info (str &quot;Commit contains reference to missing task for &quot; (name type)) {})))))
-    (doseq [executor-id (-&gt;&gt; create-actions (map :executor-id))]
-      (when-not (contains? (-&gt; pre-snapshot :executors) executor-id)
+    (doseq [executor-id (map :executor-id create-actions)]
+      (when-not (contains? (:executors pre-snapshot) executor-id)
         (throw (ex-info (str &quot;Commit contains reference to missing executor &quot; executor-id) {})))
       (let [executor (-&gt; pre-snapshot :executors (get executor-id))
             actions (-&gt;&gt; commit :actions (filter (comp #(= executor-id %) :executor-id)))
             given-resources (-&gt;&gt; actions (map (comp keys :resources)) flatten set)
             existing-resources (-&gt;&gt; executor :resources keys set)]
         (when-not (= given-resources existing-resources)
-          (throw (ex-info &quot;Commit contains missing resource&quot; {})))))))</pre></td></tr><tr><td class="docs"><p>Actions may get rejected during commit by different pre/post-commit constraints.
+          (throw (ex-info &quot;Commit contains missing resource&quot; {})))))))</pre></td></tr><tr><td class="docs"><p>Returns a message like this:</p>
+
+<p>  :create 'foo' on executor-1</p>
+</td><td class="codes"><pre class="brush: clojure">(ann action-rejection-message [Action -&gt; String])
+(defn- action-rejection-message
+  [action]
+  (print-str (:type action) (:id action) &quot;on&quot; (:executor-id action)))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann indent [String -&gt; String])
+(defn- indent [s]
+  (str &quot;        &quot; s))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann constraint-rejection-message [Number '[Any (ASeq Action)] -&gt; (ASeq String)])
+(defn- constraint-rejection-message
+  [index [constraint-name actions]]
+  (string/join &quot;\n&quot;  (concat [(str index &quot;) &quot; constraint-name &quot; rejected:&quot;)]
+                             (map (comp indent action-rejection-message) actions))))</pre></td></tr><tr><td class="docs"><p>Returns a message like this:</p>
+
+<p>  Commit rejected:</p>
+
+<p>  1) optimistic-locking rejected:
+          :create 'foo' on executor-1
+          :update 'bar' on executor-2
+          :kill 'baz' on executor-1</p>
+
+<p>  2) no-resource-overbooking rejected:
+          :create 'foo' on executor-1</p>
+</td><td class="codes"><pre class="brush: clojure">(ann commit-rejection-message [Result -&gt; String])
+(defn- commit-rejection-message
+  [result]
+  (str &quot;Commit rejected:\n\n&quot;
+       (string/join &quot;\n\n&quot; (map constraint-rejection-message
+                                (next (range))
+                                (:rejected-actions result)))))</pre></td></tr><tr><td class="docs"><p>Actions may get rejected during commit by different pre/post-commit constraints.
 Commits are considered rejected if</p>
 
 <ul>
@@ -3213,13 +3248,15 @@ Commits are considered rejected if</p>
 </td><td class="codes"><pre class="brush: clojure">(ann ^:no-check reject-if-necessary [Commit Result -&gt; Any])
 (defn- reject-if-necessary
   [commit result]
-  (let [allow-partial-commit? (-&gt; commit :allow-partial-commit)
+  (let [allow-partial-commit? (:allow-partial-commit commit)
         total (-&gt; commit :actions count)
         rejects (-&gt; result :rejected-actions vals flatten set count)]
     (if (or (and allow-partial-commit? (= rejects total))
-            (and (not allow-partial-commit?) (&gt; rejects 0)))
-      (throw (ex-info (str &quot;commit rejected (total: &quot; total &quot; rejects: &quot; rejects &quot; partial: &quot; allow-partial-commit? &quot;)&quot;)
-                      (map-&gt;Result result))))))</pre></td></tr><tr><td class="docs"><h3>How to implement a scheduler?</h3>
+            (and (not allow-partial-commit?) (pos? rejects)))
+      (throw (ex-info (commit-rejection-message result) (map-&gt;Result result))))))</pre></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check filter-vals (All [k v] (IFn [(Map k v) (Fn [v -&gt; Boolean]) -&gt; (Map k v)])))
+(defn- filter-vals [m pred]
+  (apply dissoc m (for [[k v] m :when (not (pred v))] k)))</pre></td></tr><tr><td class="docs"><h3>How to implement a scheduler?</h3>
 
 <p>The basic workflow for a scheduler looks like the following:</p>
 
@@ -3260,9 +3297,9 @@ intended to replay already committed commits (e.g. in an replication mode).</p>
                (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot)])
                              (-&gt; pre-snapshot :constraints :pre))))
         (reject-if-necessary commit {:accepted-actions []
-                                  :rejected-actions @rejections
-                                  :pre-snapshot pre-snapshot
-                                  :post-snapshot nil}))
+                                     :rejected-actions (filter-vals @rejections (complement empty?))
+                                     :pre-snapshot pre-snapshot
+                                     :post-snapshot nil}))
       (let [pre-rejected-actions (-&gt; @rejections vals flatten set)]
         ; Phase 2: apply the actions
         (doseq [action (-&gt;&gt; commit :actions (filter (complement pre-rejected-actions)))]
@@ -3278,7 +3315,7 @@ intended to replay already committed commits (e.g. in an replication mode).</p>
         (let [post-rejected-actions (-&gt; @rejections vals flatten set)
               accepted-actions (-&gt;&gt; commit :actions (filter (complement post-rejected-actions)))
               result {:accepted-actions accepted-actions
-                      :rejected-actions @rejections
+                      :rejected-actions (filter-vals @rejections (complement empty?))
                       :pre-snapshot pre-snapshot
                       :post-snapshot post-snapshot}]
           (reject-if-necessary commit result)
@@ -3329,7 +3366,7 @@ the following signature: <code>(fn [commit pre-snapshot post-snapshot])</code>.<
    :metadata-version #(get-in %1 [:tasks (:id %2) :metadata-version])})</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ann versioned? [Action -&gt; Boolean])
 (defn- versioned? [action]
-  (not (empty? (select-keys action (keys versions)))))</pre></td></tr><tr><td class="docs">
+  (boolean (seq (select-keys action (keys versions)))))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ann version-outdated? [Snapshot Action -&gt; ['[VersionType VersionExtractor] -&gt; Boolean]])
 (defn- version-outdated? [snapshot action]
   (fn [[type extractor]]
@@ -3473,7 +3510,7 @@ schedulers wants them to do.</p>
     (alter pool update-metadata :executors executor-id metadata)
     (alter pool bump-version :executors executor-id))
   pool)</pre></td></tr><tr><td class="docs">
-</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check update-status [Pool Any State -&gt; Pool])
+</td><td class="codes"><pre class="brush: clojure">(ann ^:no-check update-status [Pool Any Status -&gt; Pool])
 (defn- update-status [pool executor-id state]
   (assoc-in pool [:executors executor-id :status] state))</pre></td></tr><tr><td class="docs"><p>If an executor shuts down (expected or unexpectedly), it has to be unregistered, so that schedulers do not use it
    anymore.</p>
