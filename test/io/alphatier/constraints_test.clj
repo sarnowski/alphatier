@@ -123,6 +123,7 @@
         commit (create-commit "test" (create-actions executor-id :size 2) :allow-partial-commit true)]
     (constraints/add pool :post :reject post-reject)
     (try
+      (schedulers/commit pool commit)
       (fail "Expected rejection")
       (catch ExceptionInfo e
         (let [result (ex-data e)]
