@@ -28,7 +28,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ## Usage
 
 The library is written in [Clojure](http://clojure.org/) and  is available in the
-[central Maven repository](https://repo1.maven.org/maven2/io/alphatier/alphatier/0.1.0/):
+[central Maven repository](https://repo1.maven.org/maven2/io/alphatier/alphatier/):
 
     <dependency>
         <groupId>io.alphatier</groupId>
