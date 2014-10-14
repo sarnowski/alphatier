@@ -24,49 +24,68 @@
 ;; Isolation is provided through [Clojure's STM](http://clojure.org/refs). If writes happen to the state while a
 ;; transaction runs, the transaction will be repeated with the new state.
 (ns io.alphatier.schedulers
-  (:require [io.alphatier.pools :as pools]
-            [clojure.set :refer [intersection union superset?]]))
+  (:require [clojure.core.typed :refer [ann-record defalias ann Any Fn IFn ASeq Map doseq All]]
+            [clojure.string :as string]
+            [clojure.set :refer [intersection union superset?]]
+            [io.alphatier.pools :refer :all])
+  (:import [io.alphatier.pools Pool Task Commit]))
 
-;; ## Commits
-;;
-;; All changes to the pool by a scheduler have to go through a commit. A scheduler can do three actions:
-;;
-;; * **create** new tasks, assigned to an executor
-;; * **update** a task's metadata in order to influence the task during runtime
-;; * **kill** a task
-(defrecord Commit [scheduler-id actions allow-partial-commit])
-
+(ann-record Result [accepted-actions :- (ASeq Action)
+                    rejected-actions :- (Map Any (ASeq Action))
+                    pre-snapshot :- Snapshot
+                    post-snapshot :- Snapshot])
 (defrecord Result [accepted-actions rejected-actions pre-snapshot post-snapshot])
 
+(ann ^:no-check add-task [Pool Task -> Pool])
+(defn- add-task [pool task]
+  (let [task-id (:id task)
+        executor-id (:executor-id task)]
+    (-> pool
+        (assoc-in [:tasks task-id] task)
+        (update-in [:executors executor-id :task-ids] conj task-id)
+        (update-in [:executors executor-id :task-ids-version] inc))))
 
+(defalias CommitAction [PoolRef Any Action -> Pool])
+
+(ann create-task CommitAction)
 (defn- create-task
   "Creating a tasks registers it in the pool and assigns it to the given executor."
   [pool scheduler-id action]
-  (let [task (pools/map->Task (merge
-                                {:scheduler-id scheduler-id
-                                 :lifecycle-phase :create
-                                 :metadata-version 0}
-                                action))]
-    (alter pool assoc-in [:tasks (:id task)] task)
-    (alter pool update-in [:executors (:executor-id task) :task-ids] conj (:id task))
-    (alter pool update-in [:executors (:executor-id task) :task-ids-version] inc)))
+  (let [task (map->Task (merge {:id (:id action)
+                                :executor-id (:executor-id action)
+                                :scheduler-id scheduler-id
+                                :lifecycle-phase :create
+                                :resources (:resources action)
+                                :metadata (or (:metadata action) {})
+                                :metadata-version 0}))]
+    (alter pool add-task task)))
 
+(ann ^:no-check update-metadata [Pool Action -> Pool])
+(defn- update-metadata [pool action]
+  (let [task-id (:id action)]
+    (-> pool
+        (update-in [:tasks task-id :metadata] merge (:metadata action))
+        (update-in [:tasks task-id :metadata-version] inc))))
+
+(ann update-task CommitAction)
 (defn- update-task
   "Updating a task modifies the task's metadata."
-  [pool scheduler-id task]
-  (alter pool update-in [:tasks (:id task) :metadata] merge (:metadata task))
-  (alter pool update-in [:tasks (:id task) :metadata-version] inc))
+  [pool scheduler-id action]
+  (alter pool update-metadata action))
 
+(ann ^:no-check kill-task CommitAction)
 (defn- kill-task
 "Killing a tasks sets its lifecycle-phase to `:kill`, so that the executor can actually kill it."
-  [pool scheduler-id task]
-  (alter pool assoc-in [:tasks (:id task) :lifecycle-phase] :kill))
+  [pool scheduler-id action]
+  (alter pool assoc-in [:tasks (:id action) :lifecycle-phase] :kill))
 
 ;; All given tasks must provide the action you want to perform in the `:action` key.
+(ann ^:no-check commit-actions [ActionType -> CommitAction])
 (def ^:private commit-actions {:create create-task
                                :update update-task
                                :kill kill-task})
 
+(ann ^:no-check validate-commit [Commit Snapshot -> Any])
 (defn- validate-commit
 "Commits will get validated upon commit. Valid commit satisfy all of the following criteria:
 
@@ -78,7 +97,7 @@
   [commit pre-snapshot]
 
   (let [task-ids (->> commit :actions (map :id))]
-    (when (distinct? (-> task-ids sort) (-> task-ids set sort))
+    (when (distinct? (sort task-ids) (-> task-ids set sort))
       (throw (ex-info "Commit contains duplicate tasks" {}))))
 
   (let [create-actions (->> commit :actions (filter (comp (partial = :create) :type)))]
@@ -86,26 +105,64 @@
       (throw (ex-info "Commit contains duplicate create tasks" {})))
     (when (not-empty (intersection (-> (map keys create-actions) flatten set)
                                    #{:scheduler-id :lifecycle-phase :metadata-version}))
-      (throw (ex-info "Commit contains illegal properties in create actions" {}))))
+      (throw (ex-info "Commit contains illegal properties in create actions" {})))
 
-  (doseq [type [:update :kill]]
-    (let [given-task-ids (->> commit :actions (filter #(= (:type %) type)) (map :id) set)
-          existing-task-ids (->> pre-snapshot :tasks vals (map :id) set)]
-      (when (and (not-empty given-task-ids)
-                 (not (superset? existing-task-ids given-task-ids)))
-        (throw (ex-info (str "Commit contains reference to missing task for " (name type)) {})))))
+    (doseq [type :- ActionType [:update :kill]]
+      (let [given-task-ids (->> commit :actions (filter #(= (:type %) type)) (map :id) set)
+            existing-task-ids (->> pre-snapshot :tasks vals (map :id) set)]
+        (when (and (not-empty given-task-ids)
+                   (not (superset? existing-task-ids given-task-ids)))
+          (throw (ex-info (str "Commit contains reference to missing task for " (name type)) {})))))
 
-  (doseq [executor-id (->> commit :actions (filter (comp (partial = :create) :type)) (map :executor-id))]
-    (when-not (contains? (-> pre-snapshot :executors) executor-id)
-      (throw (ex-info (str "Commit contains reference to missing executor " executor-id) {})))
-    (let [executor (-> pre-snapshot :executors (get executor-id))
-          actions (->> commit :actions (filter (comp #(= executor-id %) :executor-id)))
-          given-resources (->> actions (map (comp keys :resources)) flatten set)
-          existing-resources (->> executor :resources keys set)]
-      (when-not (= given-resources existing-resources)
-        (throw (ex-info "Commit contains missing resource" {}))))))
+    (doseq [executor-id (map :executor-id create-actions)]
+      (when-not (contains? (:executors pre-snapshot) executor-id)
+        (throw (ex-info (str "Commit contains reference to missing executor " executor-id) {})))
+      (let [executor (-> pre-snapshot :executors (get executor-id))
+            actions (->> commit :actions (filter (comp #(= executor-id %) :executor-id)))
+            given-resources (->> actions (map (comp keys :resources)) flatten set)
+            existing-resources (->> executor :resources keys set)]
+        (when-not (= given-resources existing-resources)
+          (throw (ex-info "Commit contains missing resource" {})))))))
 
-(defn- reject-if-needed
+(ann action-rejection-message [Action -> String])
+(defn- action-rejection-message
+  "Returns a message like this:
+
+  :create 'foo' on executor-1"
+  [action]
+  (print-str (:type action) (:id action) "on" (:executor-id action)))
+
+(ann indent [String -> String])
+(defn- indent [s]
+  (str "        " s))
+
+(ann constraint-rejection-message [Number '[Any (ASeq Action)] -> (ASeq String)])
+(defn- constraint-rejection-message
+  [index [constraint-name actions]]
+  (string/join "\n"  (concat [(str index ") " constraint-name " rejected:")]
+                             (map (comp indent action-rejection-message) actions))))
+
+(ann commit-rejection-message [Result -> String])
+(defn- commit-rejection-message
+  "Returns a message like this:
+
+  Commit rejected:
+
+  1) optimistic-locking rejected:
+          :create 'foo' on executor-1
+          :update 'bar' on executor-2
+          :kill 'baz' on executor-1
+
+  2) no-resource-overbooking rejected:
+          :create 'foo' on executor-1"
+  [result]
+  (str "Commit rejected:\n\n"
+       (string/join "\n\n" (map constraint-rejection-message
+                                (next (range))
+                                (:rejected-actions result)))))
+
+(ann ^:no-check reject-if-necessary [Commit Result -> Any])
+(defn- reject-if-necessary
 "Actions may get rejected during commit by different pre/post-commit constraints.
 Commits are considered rejected if
 
@@ -114,13 +171,17 @@ Commits are considered rejected if
 
 In all other cases the commit is accepted."
   [commit result]
-  (let [allow-partial-commit? (-> commit :allow-partial-commit)
+  (let [allow-partial-commit? (:allow-partial-commit commit)
         total (-> commit :actions count)
         rejects (-> result :rejected-actions vals flatten set count)]
     (if (or (and allow-partial-commit? (= rejects total))
-            (and (not allow-partial-commit?) (> rejects 0)))
-      (throw (ex-info (str "commit rejected (total: " total " rejects: " rejects " partial: " allow-partial-commit? ")")
-                      (map->Result result))))))
+            (and (not allow-partial-commit?) (pos? rejects)))
+      (throw (ex-info (commit-rejection-message result) (map->Result result))))))
+
+; TODO see if we can make this pass the type checker
+(ann ^:no-check filter-vals (All [k v] (IFn [(Map k v) (Fn [v -> Boolean]) -> (Map k v)])))
+(defn- filter-vals [m pred]
+  (apply dissoc m (for [[k v] m :when (not (pred v))] k)))
 
 ;; ### How to implement a scheduler?
 ;;
@@ -131,6 +192,7 @@ In all other cases the commit is accepted."
 ;;    tasks or some tasks that you want to shut down)
 ;; 3. commit your decision to the pool
 
+(ann ^:no-check commit [PoolRef Commit & :optional {:force Boolean} -> Result])
 (defn commit
 "### Committing
 
@@ -151,7 +213,7 @@ You can not issue two actions for the same task at once."
 
   (dosync
     (let [pre-snapshot @pool
-          rejections (atom {})]
+          rejections (atom {})] ;TODO since we only use this locally, there has to be a better way
 
       (validate-commit commit pre-snapshot)
 
@@ -161,10 +223,10 @@ You can not issue two actions for the same task at once."
                (partial merge-with into)
                (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot)])
                              (-> pre-snapshot :constraints :pre))))
-        (reject-if-needed commit {:accepted-actions []
-                                  :rejected-actions @rejections
-                                  :pre-snapshot pre-snapshot
-                                  :post-snapshot nil}))
+        (reject-if-necessary commit {:accepted-actions []
+                                     :rejected-actions (filter-vals @rejections (complement empty?))
+                                     :pre-snapshot pre-snapshot
+                                     :post-snapshot nil}))
 
       (let [pre-rejected-actions (-> @rejections vals flatten set)]
         ; Phase 2: apply the actions
@@ -184,11 +246,11 @@ You can not issue two actions for the same task at once."
         (let [post-rejected-actions (-> @rejections vals flatten set)
               accepted-actions (->> commit :actions (filter (complement post-rejected-actions)))
               result {:accepted-actions accepted-actions
-                      :rejected-actions @rejections
+                      :rejected-actions (filter-vals @rejections (complement empty?))
                       :pre-snapshot pre-snapshot
                       :post-snapshot post-snapshot}]
 
-          (reject-if-needed commit result)
+          (reject-if-necessary commit result)
 
           ; accept!
           (map->Result result))))))

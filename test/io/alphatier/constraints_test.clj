@@ -123,7 +123,7 @@
         commit (create-commit "test" (create-actions executor-id :size 2) :allow-partial-commit true)]
     (constraints/add pool :post :reject post-reject)
     (try
-      (println (:accepted-actions (schedulers/commit pool commit)))
+      (schedulers/commit pool commit)
       (fail "Expected rejection")
       (catch ExceptionInfo e
         (let [result (ex-data e)]
@@ -141,7 +141,8 @@
       (schedulers/commit pool commit)
       (fail "Expected rejection")
       (catch ExceptionInfo e
-        (is (.contains (.getMessage e) "commit rejected"))
+        (is (.contains (.getMessage e) "Commit rejected"))
+        (is (.contains (.getMessage e) ":no-resource-overbooking"))
         (is (-> e ex-data :rejected-actions :no-resource-overbooking) (:actions commit))))))
 
 (deftest no-resource-overbooking-partial-test
@@ -160,7 +161,8 @@
       (schedulers/commit pool commit)
       (fail "Expected rejection")
       (catch ExceptionInfo e
-        (is (.contains (.getMessage e) "commit rejected"))
+        (is (.contains (.getMessage e) "Commit rejected"))
+        (is (.contains (.getMessage e) ":optimistic-locking"))
         (is (-> e ex-data :rejected-actions :optimistic-locking count (= 1)))))))
 
 (deftest optimistic-locking-executor-task-ids-test
@@ -171,7 +173,8 @@
       (schedulers/commit pool commit)
       (fail "Expected rejection")
       (catch ExceptionInfo e
-        (is (.contains (.getMessage e) "commit rejected"))
+        (is (.contains (.getMessage e) "Commit rejected"))
+        (is (.contains (.getMessage e) ":optimistic-locking"))
         (is (-> e ex-data :rejected-actions :optimistic-locking count (= 1)))))))
 
 (deftest optimistic-locking-task-metadata-test
@@ -187,5 +190,21 @@
       (schedulers/commit pool commit)
       (fail "Expected rejection")
       (catch ExceptionInfo e
-        (is (.contains (.getMessage e) "commit rejected"))
+        (is (.contains (.getMessage e) "Commit rejected"))
+        (is (.contains (.getMessage e) ":optimistic-locking"))
+        (is (-> e ex-data :rejected-actions :optimistic-locking count (= 1)))))))
+
+(deftest multi-reject-test
+  (let [pool (empty-pool)
+        executor-id (executor-id-of pool first)
+        commit (create-commit "test" [(create-action executor-id :resources {:cpu 9 :memory 25})
+                                      (create-action executor-id :executor-metadata-version 99)]
+                              :allow-partial-commit true)]
+    (try
+      (schedulers/commit pool commit)
+      (catch ExceptionInfo e
+        (is (.contains (.getMessage e) "Commit rejected"))
+        (is (.contains (.getMessage e) ":no-resource-overbooking"))
+        (is (.contains (.getMessage e) ":optimistic-locking"))
+        (is (-> e ex-data :rejected-actions :no-resource-overbooking count (= 1)))
         (is (-> e ex-data :rejected-actions :optimistic-locking count (= 1)))))))

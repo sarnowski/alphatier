@@ -19,14 +19,32 @@
 ;; [predefined constraints](#io.alphatier.constraints).
 ;;
 (ns io.alphatier.pools
-  (:require [io.alphatier.constraints :as constraints]))
+  (:require [clojure.core.typed :refer [defalias ann-record ann Map HMap Any U Ref1 ASeq]]))
 
-;; ### Pools
+;; ### Tasks
 ;;
-;; A pool represents a snapshot of a set of executors and their tasks. Both executors and tasks are packaged in maps
-;; with their IDs as key.
-(defrecord Pool
-           [executors tasks constraints])
+;; Tasks are execution requests for executors. A task has an unique identifier. It holds the following information:
+;;
+;; * `executor-id` is the identifier of the executor this task is assigned to.
+;; * `lifecycle-phase` can be one of the following: `:create`, `:created` and `:kill`.
+;; * `resources` works similar to the `resources` information on an executor but represents the amount of resources
+;;   that must be reserved and guaranteed for this task.
+;; * `metadata` and `metadata-version` work exactly like the `metadata` on an executor but provided by the scheduler.
+
+(defalias Resources (Map Any Number))
+(defalias Metadata (Map Any Any))
+
+(defalias LifecyclePhase (U ':create ':creating ':created ':kill ':killing))
+
+(ann-record Task [id :- Any
+                  executor-id :- Any
+                  scheduler-id :- Any
+                  lifecycle-phase :- LifecyclePhase
+                  resources :- Resources
+                  metadata :- Metadata
+                  metadata-version :- Number])
+(defrecord Task
+           [id executor-id scheduler-id lifecycle-phase resources metadata metadata-version])
 
 ;; ### Executors
 ;;
@@ -42,43 +60,88 @@
 ;; * `task-ids` is a list of task IDs that are assigned to this executor.
 ;; * `task-ids-version` works similar to the `metadata-version` as it is a counter thats gets incremented when the
 ;;   `task-ids` list changes.
+(defalias Status (U ':registered ':unregistered))
+(ann-record Executor [id :- Any
+                      status :- Status
+                      resources :- Resources
+                      metadata :- Metadata
+                      metadata-version :- Number
+                      task-ids :- (ASeq Any)
+                      task-ids-version :- Number])
 (defrecord Executor
            [id status resources metadata metadata-version task-ids task-ids-version])
 
-;; ### Tasks
+;; ## Commits
 ;;
-;; Tasks are execution requests for executors. A task has an unique identifier. It holds the following information:
+;; All changes to the pool by a scheduler have to go through a commit. A scheduler can do three actions:
 ;;
-;; * `executor-id` is the identifier of the executor this task is assigned to.
-;; * `lifecycle-phase` can be one of the following: `:create`, `:created` and `:kill`.
-;; * `resources` works similar to the `resources` information on an executor but represents the amount of resources
-;;   that must be reserved and guaranteed for this task.
-;; * `metadata` and `metadata-version` work exactly like the `metadata` on an executor but provided by the scheduler.
-(defrecord Task
-           [id executor-id scheduler-id lifecycle-phase resources metadata metadata-version])
+;; * **create** new tasks, assigned to an executor
+;; * **update** a task's metadata in order to influence the task during runtime
+;; * **kill** a task
 
+(defalias ActionType (U ':create ':update ':kill))
+(defalias Action (HMap :mandatory {:id Any
+                                   :type ActionType
+                                   :executor-id Any
+                                   :resources Resources}
+                       :optional {:metadata Metadata
+                                  :metadata-version Number
+                                  :executor-metadata-version Number
+                                  :executor-task-ids-version Number}
+                       :complete? true))
+
+(defrecord Commit [scheduler-id actions allow-partial-commit])
+(ann-record Commit [scheduler-id :- Any
+                    actions :- (ASeq Action)
+                    allow-partial-commit :- Boolean])
+
+(defalias Executors (Map Any Executor))
+(defalias Tasks (Map Any Task))
+(defalias Snapshot '{:executors Executors :tasks Tasks})
+
+(defalias ConstraintType (U ':pre ':post))
+; TODO those should return (Coll Action)
+(defalias PreConstraint [Commit Snapshot -> (ASeq Action)])
+(defalias PostConstraint [Commit Snapshot Snapshot -> (ASeq Action)])
+(defalias Constraint (U PreConstraint PostConstraint))
+
+;; ### Pools
+;;
+;; A pool represents a snapshot of a set of executors and their tasks. Both executors and tasks are packaged in maps
+;; with their IDs as key.
+(ann-record Pool [executors :- Executors
+                  tasks :- Tasks
+                  constraints :- '{:pre (Map Any PreConstraint)
+                                   :post (Map Any PostConstraint)}])
+(defrecord Pool [executors tasks constraints])
+
+(defalias PoolRef (Ref1 Pool))
 
 ;; ## Pool Functions
 ;;
 
+(ann create [-> PoolRef])
 (defn create
   "A new pool keeps track of the state of the pool. Access to it should be done via the `get-snapshot` function.
    The new pool has already all built-in constraints added."
   []
   (ref (map->Pool {:executors {}
                    :tasks {}
-                   :constraints
-                     {:pre
-                        {:optimistic-locking constraints/optimistic-locking}
-                      :post
-                        {:no-resource-overbooking constraints/no-resource-overbooking}}})))
+                   :constraints {:pre {} :post {}}})))
 
+(ann ^:no-check get-snapshot [PoolRef -> Snapshot])
 (defn get-snapshot
   "When getting a snapshot of a pool, you get an immutable view of the current executors and tasks. This view is
    guarenteed to be consistent."
   [pool]
-  (select-keys @pool [:executors :tasks]))
+    ; TODO this should be possible with core.typed!
+    (select-keys @pool [:executors :tasks]))
 
+(ann ^:no-check with-snapshot [Pool Snapshot -> Pool])
+(defn- with-snapshot [pool snapshot]
+  (merge pool snapshot))
+
+(ann create-with-snapshot [Snapshot -> PoolRef])
 (defn create-with-snapshot
   "It is also possible to create a new pool based on an old state. This can be used to simulate commits based on a real
    pool that should not affect the live system or to make a pool durable and restore it later. The new pool has the
@@ -86,5 +149,5 @@
   [snapshot]
   (let [pool (create)]
     (dosync
-      (alter pool merge snapshot))
+      (alter pool with-snapshot snapshot))
     pool))
