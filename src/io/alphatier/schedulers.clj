@@ -25,6 +25,7 @@
 ;; transaction runs, the transaction will be repeated with the new state.
 (ns io.alphatier.schedulers
   (:require [clojure.core.typed :refer [ann-record defalias ann Any Fn IFn ASeq Map doseq All]]
+            [clojure.string :as string]
             [clojure.set :refer [intersection union superset?]]
             [io.alphatier.pools :refer :all])
   (:import [io.alphatier.pools Pool Task Commit]))
@@ -123,6 +124,43 @@
         (when-not (= given-resources existing-resources)
           (throw (ex-info "Commit contains missing resource" {})))))))
 
+(ann action-rejection-message [Action -> String])
+(defn- action-rejection-message
+  "Returns a message like this:
+
+  :create 'foo' on executor-1"
+  [action]
+  (print-str (:type action) (:id action) "on" (:executor-id action)))
+
+(ann indent [String -> String])
+(defn- indent [s]
+  (str "        " s))
+
+(ann constraint-rejection-message [Number '[Any (ASeq Action)] -> (ASeq String)])
+(defn- constraint-rejection-message
+  [index [constraint-name actions]]
+  (string/join "\n"  (concat [(str index ") " constraint-name " rejected:")]
+                             (map (comp indent action-rejection-message) actions))))
+
+(ann commit-rejection-message [Result -> String])
+(defn- commit-rejection-message
+  "Returns a message like this:
+
+  Commit rejected:
+
+  1) optimistic-locking rejected:
+          :create 'foo' on executor-1
+          :update 'bar' on executor-2
+          :kill 'baz' on executor-1
+
+  2) no-resource-overbooking rejected:
+          :create 'foo' on executor-1"
+  [result]
+  (str "Commit rejected:\n\n"
+       (string/join "\n\n" (map constraint-rejection-message
+                                (next (range))
+                                (:rejected-actions result)))))
+
 (ann ^:no-check reject-if-necessary [Commit Result -> Any])
 (defn- reject-if-necessary
 "Actions may get rejected during commit by different pre/post-commit constraints.
@@ -138,8 +176,7 @@ In all other cases the commit is accepted."
         rejects (-> result :rejected-actions vals flatten set count)]
     (if (or (and allow-partial-commit? (= rejects total))
             (and (not allow-partial-commit?) (pos? rejects)))
-      (throw (ex-info (str "commit rejected (total: " total " rejects: " rejects " partial: " allow-partial-commit? ")")
-                      (map->Result result))))))
+      (throw (ex-info (commit-rejection-message result) (map->Result result))))))
 
 ; TODO see if we can make this pass the type checker
 (ann ^:no-check filter-vals (All [k v] (IFn [(Map k v) (Fn [v -> Boolean]) -> (Map k v)])))
@@ -187,9 +224,9 @@ You can not issue two actions for the same task at once."
                (into {} (map (fn [[name constraint]] [name (constraint commit pre-snapshot)])
                              (-> pre-snapshot :constraints :pre))))
         (reject-if-necessary commit {:accepted-actions []
-                                  :rejected-actions (filter-vals @rejections not-empty)
-                                  :pre-snapshot pre-snapshot
-                                  :post-snapshot nil}))
+                                     :rejected-actions (filter-vals @rejections (complement empty?))
+                                     :pre-snapshot pre-snapshot
+                                     :post-snapshot nil}))
 
       (let [pre-rejected-actions (-> @rejections vals flatten set)]
         ; Phase 2: apply the actions
@@ -209,7 +246,7 @@ You can not issue two actions for the same task at once."
         (let [post-rejected-actions (-> @rejections vals flatten set)
               accepted-actions (->> commit :actions (filter (complement post-rejected-actions)))
               result {:accepted-actions accepted-actions
-                      :rejected-actions (filter-vals @rejections not-empty)
+                      :rejected-actions (filter-vals @rejections (complement empty?))
                       :pre-snapshot pre-snapshot
                       :post-snapshot post-snapshot}]
 

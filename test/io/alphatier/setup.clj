@@ -39,9 +39,9 @@
 
 (defn create-commit-internal [scheduler-id actions options]
   (pools/map->Commit (merge {:scheduler-id scheduler-id
-                                  :actions actions
-                                  :allow-partial-commit false}
-                                 options)))
+                             :actions actions
+                             :allow-partial-commit false}
+                            options)))
 
 (defn create-commit [scheduler-id actions & {:as options}]
   (create-commit-internal scheduler-id actions options))
