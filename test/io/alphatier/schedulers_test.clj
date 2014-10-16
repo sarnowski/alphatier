@@ -17,7 +17,7 @@
     (try
       (schedulers/commit pool commit)
       (fail "Expected rejection")
-      (catch ExceptionInfo e
+      (catch IllegalArgumentException e
         (is (.contains (.getMessage e) "duplicate tasks"))))))
 
 (deftest commit-duplicate-create-actions-should-fail
@@ -28,7 +28,7 @@
     (try
       (schedulers/commit pool commit)
       (fail "Expected rejection")
-      (catch ExceptionInfo e
+      (catch IllegalArgumentException e
         (is (.contains (.getMessage e) "duplicate create tasks"))))))
 
 (deftest commit-action-for-unknown-task-should-fail
@@ -38,7 +38,7 @@
     (try
       (schedulers/commit pool commit)
       (fail "Expected rejection")
-      (catch ExceptionInfo e
+      (catch IllegalArgumentException e
         (is (.contains (.getMessage e) "missing task for update"))))))
 
 (deftest create-action-with-scheduler-id-should-fail
@@ -48,7 +48,7 @@
     (try
       (schedulers/commit pool commit)
       (fail "Expected rejection")
-      (catch ExceptionInfo e
+      (catch IllegalArgumentException e
         (is (.contains (.getMessage e) "illegal properties in create actions"))))))
 
 (deftest create-action-with-lifecycle-phase-should-fail
@@ -58,7 +58,7 @@
     (try
       (schedulers/commit pool commit)
       (fail "Expected rejection")
-      (catch ExceptionInfo e
+      (catch IllegalArgumentException e
         (is (.contains (.getMessage e) "illegal properties in create actions"))))))
 
 (deftest create-action-with-metadata-version-should-fail
@@ -68,7 +68,7 @@
     (try
       (schedulers/commit pool commit)
       (fail "Expected rejection")
-      (catch ExceptionInfo e
+      (catch IllegalArgumentException e
         (is (.contains (.getMessage e) "illegal properties in create actions"))))))
 
 (comment ; TODO migrate
@@ -85,7 +85,7 @@
           (try
             (commit pool create-commit)
             (is false "Expected rejection")
-          (catch ExceptionInfo e
+          (catch IllegalArgumentException e
             (is (.contains (.getMessage e) "missing task for kill"))))))
 
       (testing "task with missing executor"
@@ -99,7 +99,7 @@
           (try
             (commit pool create-commit)
             (is false "Expected rejection")
-          (catch ExceptionInfo e
+          (catch IllegalArgumentException e
             (is (.contains (.getMessage e) "missing executor"))))))
 
       (testing "task with missing resources"
@@ -113,7 +113,7 @@
           (try
             (commit pool create-commit)
             (is false "Expected rejection")
-          (catch ExceptionInfo e
+          (catch IllegalArgumentException e
             (is (.contains (.getMessage e) "missing resource"))))))
 
       (testing "simple task creation"

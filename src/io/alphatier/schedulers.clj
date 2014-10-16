@@ -98,31 +98,31 @@
 
   (let [task-ids (->> commit :actions (map :id))]
     (when (distinct? (sort task-ids) (-> task-ids set sort))
-      (throw (ex-info "Commit contains duplicate tasks" {}))))
+      (throw (IllegalArgumentException. "Commit contains duplicate tasks"))))
 
   (let [create-actions (->> commit :actions (filter (comp (partial = :create) :type)))]
     (when (not-empty (intersection (set (map :id create-actions)) (-> pre-snapshot :tasks keys set)))
-      (throw (ex-info "Commit contains duplicate create tasks" {})))
+      (throw (IllegalArgumentException. "Commit contains duplicate create tasks")))
     (when (not-empty (intersection (-> (map keys create-actions) flatten set)
                                    #{:scheduler-id :lifecycle-phase :metadata-version}))
-      (throw (ex-info "Commit contains illegal properties in create actions" {})))
+      (throw (IllegalArgumentException. "Commit contains illegal properties in create actions")))
 
     (doseq [type :- ActionType [:update :kill]]
       (let [given-task-ids (->> commit :actions (filter #(= (:type %) type)) (map :id) set)
             existing-task-ids (->> pre-snapshot :tasks vals (map :id) set)]
         (when (and (not-empty given-task-ids)
                    (not (superset? existing-task-ids given-task-ids)))
-          (throw (ex-info (str "Commit contains reference to missing task for " (name type)) {})))))
+          (throw (IllegalArgumentException. (str "Commit contains reference to missing task for " (name type)))))))
 
     (doseq [executor-id (map :executor-id create-actions)]
       (when-not (contains? (:executors pre-snapshot) executor-id)
-        (throw (ex-info (str "Commit contains reference to missing executor " executor-id) {})))
+        (throw (IllegalArgumentException. (str "Commit contains reference to missing executor " executor-id))))
       (let [executor (-> pre-snapshot :executors (get executor-id))
             actions (->> commit :actions (filter (comp #(= executor-id %) :executor-id)))
             given-resources (->> actions (map (comp keys :resources)) flatten set)
             existing-resources (->> executor :resources keys set)]
         (when-not (= given-resources existing-resources)
-          (throw (ex-info "Commit contains missing resource" {})))))))
+          (throw (IllegalArgumentException. "Commit contains missing resource")))))))
 
 (ann action-rejection-message [Action -> String])
 (defn- action-rejection-message
