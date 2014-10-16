@@ -1,4 +1,4 @@
-(defproject io.alphatier/alphatier "0.3.0-SNAPSHOT"
+(defproject io.alphatier/alphatier "0.3.0"
 
   :description "
 Alphatier is a resource management library. It is designed to allow different
@@ -33,7 +33,7 @@ The library is written in [Clojure](http://clojure.org/) and  is available in th
     <dependency>
         <groupId>io.alphatier</groupId>
         <artifactId>alphatier</artifactId>
-        <version>0.2.0</version>
+        <version>0.3.0</version>
     </dependency>
 
 The library is written in pure Clojure without [ahead-of-time compilation](http://clojure.org/compilation).
